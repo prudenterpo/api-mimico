@@ -21,7 +21,7 @@ public class Game {
 
     @ManyToOne
     @JoinColumn(name = "room_id", nullable = false)
-    private GameRoomteste gameRoom;
+    private GameRoom gameRoom;
 
     @Column(name = "start_time")
     private LocalDateTime startTime;

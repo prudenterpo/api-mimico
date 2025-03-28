@@ -12,8 +12,8 @@ public class GameTest {
         LocalDateTime now = LocalDateTime.now();
         game.setStartTime(now);
         game.setEndTime(now.plusHours(1));
-        game.setGameRoom(new GameRoom());  // Assuming a GameRoom is required
-        game.setWinnerTeam(new Team());    // Assuming a Team can be set as winner
+        game.setGameRoom(new GameRoom());  
+        game.setWinnerTeam(new Team());    
 
         assertNotNull(game.getStartTime());
         assertNotNull(game.getEndTime());
