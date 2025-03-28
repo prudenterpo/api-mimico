@@ -22,7 +22,6 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
-=======
 HELP.md
 target/
 !.mvn/wrapper/maven-wrapper.jar
@@ -56,3 +55,20 @@ build/
 
 ### VS Code ###
 .vscode/
+
+postgres_data/
+data/
+
+# Uncomment if you generate multiple backup files
+# db/backup-*.sql
+
+# Logs and temp files
+*.tmp
+*.swp
+*.bak
+*.~*
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+.env
