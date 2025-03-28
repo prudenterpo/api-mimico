@@ -16,9 +16,9 @@ public class MimeCard {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 50)
+    @Column(length = 50)
     private String category;
 
-    @Column(nullable = false)
+    @Column
     private String description;
 }

@@ -22,7 +22,7 @@ public class Player {
     private User user;
 
     @ManyToOne
-    @JoinColumn(name = "room_id", nullable = false)
+    @JoinColumn(name = "room_id")
     private GameRoom gameRoom;
 
     @ManyToOne

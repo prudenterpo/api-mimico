@@ -19,6 +19,6 @@ public class Team {
     @Column(nullable = false, length = 50)
     private String name;
 
-    @Column(nullable = false)
+    @Column
     private Integer score;
 }

@@ -16,12 +16,12 @@ public class GameRoom {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 50)
+    @Column(length = 50)
     private String name;
 
-    @Column(nullable = false, length = 20)
+    @Column(length = 20)
     private String status;
 
-    @Column(nullable = false, unique = true, length = 10)
+    @Column(length = 10)
     private String code;
 }
