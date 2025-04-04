@@ -1,6 +1,6 @@
-package com.rpo.mimico.config;
+package com.rpo.mimico.configs;
 
-import com.rpo.mimico.security.JwtAuthenticationFilter;
+import com.rpo.mimico.securities.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

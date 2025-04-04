@@ -1,6 +1,6 @@
-package com.rpo.mimico.security;
+package com.rpo.mimico.securities;
 
-import com.rpo.mimico.config.JwtProperties;
+import com.rpo.mimico.configs.JwtProperties;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;

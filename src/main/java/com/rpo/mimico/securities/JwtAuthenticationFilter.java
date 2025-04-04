@@ -1,4 +1,4 @@
-package com.rpo.mimico.security;
+package com.rpo.mimico.securities;
 
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
