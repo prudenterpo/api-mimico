@@ -26,8 +26,7 @@ public class AuthService {
     private final JwtProperties jwtProperties;
 
     public LoginResponseDTO login(LoginRequestDTO request) {
-        AuthCredentialsEntity credentials = authCredentialsRepository
-                .findByEmail(request.email())
+        AuthCredentialsEntity credentials = authCredentialsRepository.findByEmail(request.email())
                 .orElseThrow(InvalidCredentialsException::new);
 
         if (!passwordEncoder.matches(request.password(), credentials.getPasswordHash())) {
