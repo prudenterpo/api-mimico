@@ -1,4 +1,4 @@
-package com.rpo.mimico.configs;
+package com.rpo.mimico.securities;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

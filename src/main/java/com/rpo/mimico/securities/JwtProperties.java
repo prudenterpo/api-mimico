@@ -1,4 +1,4 @@
-package com.rpo.mimico.configs;
+package com.rpo.mimico.securities;
 
 import lombok.Getter;
 import lombok.Setter;

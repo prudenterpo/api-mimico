@@ -1,6 +1,5 @@
 package com.rpo.mimico.securities;
 
-import com.rpo.mimico.configs.JwtProperties;
 import com.rpo.mimico.exceptions.InvalidTokenException;
 import com.rpo.mimico.exceptions.TokenExpiredException;
 import com.rpo.mimico.exceptions.TokenValidationExcepiton;

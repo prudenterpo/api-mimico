@@ -1,6 +1,6 @@
 package com.rpo.mimico.services;
 
-import com.rpo.mimico.configs.JwtProperties;
+import com.rpo.mimico.securities.JwtProperties;
 import com.rpo.mimico.dtos.LoginRequestDTO;
 import com.rpo.mimico.dtos.LoginResponseDTO;
 import com.rpo.mimico.entities.AuthCredentialsEntity;
@@ -19,6 +19,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthService {
 
+    private static final String SESSION = "session:";
     private final AuthCredentialsRepository authCredentialsRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
@@ -39,7 +40,7 @@ public class AuthService {
         credentials.setLastSessionId(sessionId.toString());
         authCredentialsRepository.save(credentials);
 
-        String redisKey = "session:" + userId;
+        String redisKey = SESSION + userId;
         redisTemplate.opsForValue().set(redisKey, sessionId.toString(), jwtProperties.getExpiration());
 
         String token = jwtTokenProvider.generateToken(userId, credentials.getEmail(), sessionId.toString());
