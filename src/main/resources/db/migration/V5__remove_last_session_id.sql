@@ -1,0 +1,1 @@
+ALTER TABLE auth_credentials DROP COLUMN last_session_id;

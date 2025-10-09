@@ -19,6 +19,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -36,14 +37,14 @@ public class JwtTokenProvider {
         if (keyBytes.length < 32) {
             log.error("JWT secret key is too short! Current: {} bytes, Required: 32 bytes minimum", keyBytes.length);
         }
-        this.secretKey = new SecretKeySpec(jwtProperties.getSecret().getBytes(), SignatureAlgorithm.HS256.getJcaName());
+        this.secretKey = Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes());
 
-        this.secretKey = Keys.hmacShaKeyFor(keyBytes);
+        this.secretKey = Jwts.SIG.HS256.key().build();
 
         log.info("JWT TokenProvider initialized successfully with HS256 algorithm");
     }
 
-    public String generateToken(UUID userId, String email, String sessionId) {
+    public String generateToken(UUID userId, String email, String sessionId, List<String> roles) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + jwtProperties.getExpiration() * 1000);
 
@@ -51,6 +52,7 @@ public class JwtTokenProvider {
                 .subject(userId.toString())
                 .claim("email", email)
                 .claim("sessionId", sessionId)
+                .claim("roles", roles)
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(secretKey)
@@ -100,6 +102,11 @@ public class JwtTokenProvider {
     public String extractSessionId(String token) {
         Claims claims = validateToken(token);
         return claims.get("sessionId", String.class);
+    }
+
+    public List<String> extractRoles(String token) {
+        Claims claims = validateToken(token);
+        return claims.get("roles", List.class);
     }
 
     public boolean isTokenExpired(String token) {

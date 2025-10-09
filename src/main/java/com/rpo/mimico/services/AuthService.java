@@ -1,5 +1,6 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.entities.RolesEntity;
 import com.rpo.mimico.securities.JwtProperties;
 import com.rpo.mimico.dtos.LoginRequestDTO;
 import com.rpo.mimico.dtos.LoginResponseDTO;
@@ -14,7 +15,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -39,13 +42,15 @@ public class AuthService {
         UUID sessionId = UUID.randomUUID();
         UUID userId = credentials.getUser().getId();
 
-        credentials.setLastSessionId(sessionId.toString());
-        authCredentialsRepository.save(credentials);
-
         String redisKey = SESSION + userId;
-        redisTemplate.opsForValue().set(redisKey, sessionId.toString(), jwtProperties.getExpiration());
+        redisTemplate.opsForValue().set(redisKey, sessionId.toString(), jwtProperties.getExpiration(), TimeUnit.SECONDS);
 
-        String token = jwtTokenProvider.generateToken(userId, credentials.getEmail(), sessionId.toString());
+        List<String> roles = credentials.getUser().getRoles()
+                .stream()
+                .map(RolesEntity::getName)
+                .toList();
+
+        String token = jwtTokenProvider.generateToken(userId, credentials.getEmail(), sessionId.toString(), roles);
 
         UsersEntity user = credentials.getUser();
 

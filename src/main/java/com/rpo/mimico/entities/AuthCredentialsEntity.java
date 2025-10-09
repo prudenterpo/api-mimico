@@ -22,9 +22,6 @@ public class AuthCredentialsEntity {
     @Column(name = "password_hash", nullable = false)
     private String passwordHash;
 
-    @Column(name = "last_session_id")
-    private String lastSessionId;
-
     @ManyToOne(optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private UsersEntity user;
