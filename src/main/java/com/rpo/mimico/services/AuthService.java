@@ -4,17 +4,19 @@ import com.rpo.mimico.securities.JwtProperties;
 import com.rpo.mimico.dtos.LoginRequestDTO;
 import com.rpo.mimico.dtos.LoginResponseDTO;
 import com.rpo.mimico.entities.AuthCredentialsEntity;
-import com.rpo.mimico.entities.UserEntity;
+import com.rpo.mimico.entities.UsersEntity;
 import com.rpo.mimico.exceptions.InvalidCredentialsException;
 import com.rpo.mimico.repositories.AuthCredentialsRepository;
 import com.rpo.mimico.securities.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -45,8 +47,21 @@ public class AuthService {
 
         String token = jwtTokenProvider.generateToken(userId, credentials.getEmail(), sessionId.toString());
 
-        UserEntity user = credentials.getUser();
+        UsersEntity user = credentials.getUser();
 
         return new LoginResponseDTO(token, user.getId().toString(), user.getNickname());
+    }
+
+    public void logout(UUID userId) {
+        log.info("User logout initiated for userId: {}", userId);
+
+        String redisKey = SESSION + userId;
+        Boolean deleted = redisTemplate.delete(redisKey);
+
+        if (Boolean.TRUE.equals(deleted)) {
+            log.info("Session deleted successfully for userId: {}", userId);
+        } else {
+            log.warn("No active session found for userId: {}", userId);
+        }
     }
 }

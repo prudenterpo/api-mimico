@@ -2,11 +2,13 @@ package com.rpo.mimico.securities;
 
 import com.rpo.mimico.exceptions.InvalidTokenException;
 import com.rpo.mimico.exceptions.TokenExpiredException;
-import com.rpo.mimico.exceptions.TokenValidationExcepiton;
+import com.rpo.mimico.exceptions.TokenValidationException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.MalformedJwtException;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SignatureException;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.UUID;
 
@@ -28,10 +31,16 @@ public class JwtTokenProvider {
 
     @PostConstruct
     private void init() {
-        this.secretKey = new SecretKeySpec(
-                jwtProperties.getSecret().getBytes(),
-                SignatureAlgorithm.HS256.getJcaName()
-        );
+        byte[] keyBytes = jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8);
+
+        if (keyBytes.length < 32) {
+            log.error("JWT secret key is too short! Current: {} bytes, Required: 32 bytes minimum", keyBytes.length);
+        }
+        this.secretKey = new SecretKeySpec(jwtProperties.getSecret().getBytes(), SignatureAlgorithm.HS256.getJcaName());
+
+        this.secretKey = Keys.hmacShaKeyFor(keyBytes);
+
+        log.info("JWT TokenProvider initialized successfully with HS256 algorithm");
     }
 
     public String generateToken(UUID userId, String email, String sessionId) {
@@ -39,29 +48,42 @@ public class JwtTokenProvider {
         Date expiration = new Date(now.getTime() + jwtProperties.getExpiration() * 1000);
 
         return Jwts.builder()
-                .setSubject(userId.toString())
+                .subject(userId.toString())
                 .claim("email", email)
                 .claim("sessionId", sessionId)
-                .setIssuedAt(now)
-                .setExpiration(expiration)
-                .signWith(secretKey, SignatureAlgorithm.HS256)
+                .issuedAt(now)
+                .expiration(expiration)
+                .signWith(secretKey)
                 .compact();
     }
 
     public Claims validateToken(String token) {
         try {
-            return Jwts.parserBuilder()
-                    .setSigningKey(secretKey)
+            return Jwts.parser()
+                    .verifyWith(secretKey)
                     .build()
-                    .parseClaimsJws(token)
-                    .getBody();
+                    .parseSignedClaims(token)
+                    .getPayload();
 
         } catch (ExpiredJwtException e) {
+            log.debug("Token expired for user: {}", e.getClaims().getSubject());
             throw new TokenExpiredException("Authentication token has expired", e);
+
         } catch (SignatureException e) {
+            log.error("Invalid JWT signature: {}", e.getMessage());
             throw new InvalidTokenException("Invalid token or incorrect signature", e);
+
+        } catch (MalformedJwtException e) {
+           log.error("Malformed JWT token: {}", e.getMessage());
+           throw new InvalidTokenException("Malformed token", e);
+
+        }catch (IllegalArgumentException e) {
+            log.error("JWT claims string is empty: {}", e.getMessage());
+            throw new InvalidTokenException("Empty token", e);
+
         } catch (Exception e) {
-            throw new TokenValidationExcepiton("Error processing authentication token", e);
+            log.error("Unexpected error validating token: {}", e.getMessage(), e);
+            throw new TokenValidationException("Error processing authentication token", e);
         }
     }
 
@@ -78,5 +100,14 @@ public class JwtTokenProvider {
     public String extractSessionId(String token) {
         Claims claims = validateToken(token);
         return claims.get("sessionId", String.class);
+    }
+
+    public boolean isTokenExpired(String token) {
+        try {
+            Claims claims = validateToken(token);
+            return claims.getExpiration().before(new Date());
+        }catch (TokenExpiredException e) {
+            return true;
+        }
     }
 }

@@ -19,7 +19,7 @@ public class Player {
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    private UsersEntity user;
 
     @ManyToOne
     @JoinColumn(name = "room_id")
