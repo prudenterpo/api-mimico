@@ -110,6 +110,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 path.startsWith("/auth/register") ||
                 path.startsWith("/v3/api-docs") ||
                 path.startsWith("/swagger-ui") ||
-                path.startsWith("/actuator/health");
+                path.startsWith("/actuator/health") ||
+                path.startsWith("/websocket-test.html") ||
+                path.startsWith("/ws") ||
+                path.endsWith(".html") ||
+                path.endsWith(".js") ||
+                path.endsWith(".css");
     }
 }
