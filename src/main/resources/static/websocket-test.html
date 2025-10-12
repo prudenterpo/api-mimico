@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test - Mimico Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .input-group {
+            margin: 20px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+            border-left: 4px solid #c62828;
+        }
+        .status.connected {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #2e7d32;
+        }
+        .log {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #2196F3;
+            background: white;
+        }
+        .log-entry.error {
+            border-left-color: #f44336;
+            background: #ffebee;
+        }
+        .log-entry.success {
+            border-left-color: #4CAF50;
+            background: #e8f5e9;
+        }
+        .online-users {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .user-list {
+            list-style: none;
+            padding: 0;
+        }
+        .user-list li {
+            padding: 8px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 4px;
+            border-left: 3px solid #2196F3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Mimico WebSocket Test</h1>
+        
+        <div class="input-group">
+            <label for="jwtToken">JWT Token (paste from login response):</label>
+            <input type="text" id="jwtToken" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+        </div>
+
+        <div class="input-group">
+            <button id="connectBtn" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        </div>
+
+        <div id="status" class="status disconnected">
+            Status: Disconnected
+        </div>
+
+        <div class="online-users">
+            <h3>Online Users: <span id="onlineCount">0</span></h3>
+            <ul id="userList" class="user-list"></ul>
+        </div>
+
+        <h3>Connection Log:</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let stompClient = null;
+
+        function connect() {
+            const token = document.getElementById('jwtToken').value.trim();
+            
+            if (!token) {
+                addLog('ERROR: Please enter JWT token', 'error');
+                return;
+            }
+
+            addLog('Connecting to WebSocket...', 'info');
+            
+            try {
+                const socket = new SockJS('http://localhost:8080/ws');
+                stompClient = Stomp.over(socket);
+                
+                // Enable debug to see what's happening
+                stompClient.debug = function(str) {
+                    addLog('DEBUG: ' + str, 'info');
+                };
+                
+                const headers = {
+                    'Authorization': `Bearer ${token}`
+                };
+
+                stompClient.connect(headers, 
+                    function(frame) {
+                        onConnected(frame);
+                    },
+                    function(error) {
+                        onError(error);
+                    }
+                );
+            } catch (e) {
+                addLog('Exception during connection: ' + e.message, 'error');
+            }
+        }
+
+        function onConnected(frame) {
+            addLog('✓ Connected successfully!', 'success');
+            updateStatus(true);
+            
+            // Subscribe to online users updates
+            stompClient.subscribe('/topic/lobby/users', function(message) {
+                const data = JSON.parse(message.body);
+                updateOnlineUsers(data);
+            });
+            
+            addLog('✓ Subscribed to /topic/lobby/users', 'success');
+            
+            // Request current lobby state (triggers broadcast to all)
+            stompClient.send('/app/lobby/join', {}, '{}');
+            addLog('✓ Requested lobby state', 'success');
+        }
+
+        function onError(error) {
+            addLog(`✗ Connection failed: ${error}`, 'error');
+            updateStatus(false);
+            
+            if (error.headers && error.headers.message) {
+                addLog(`Server message: ${error.headers.message}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (stompClient !== null) {
+                stompClient.disconnect();
+                addLog('Disconnected from WebSocket', 'info');
+            }
+            updateStatus(false);
+            clearOnlineUsers();
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = 'Status: Connected ✓';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = 'Status: Disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        function updateOnlineUsers(data) {
+            const countSpan = document.getElementById('onlineCount');
+            const userList = document.getElementById('userList');
+            
+            countSpan.textContent = data.count;
+            
+            userList.innerHTML = '';
+            data.users.forEach(userId => {
+                const li = document.createElement('li');
+                li.textContent = `User: ${userId}`;
+                userList.appendChild(li);
+            });
+            
+            addLog(`Online users updated: ${data.count} users`, 'success');
+        }
+
+        function clearOnlineUsers() {
+            document.getElementById('onlineCount').textContent = '0';
+            document.getElementById('userList').innerHTML = '';
+        }
+
+        function addLog(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        // Clear log on page load
+        window.onload = function() {
+            addLog('WebSocket test page loaded. Paste your JWT token and click Connect.', 'info');
+        };
+    </script>
+</body>
+</html>
