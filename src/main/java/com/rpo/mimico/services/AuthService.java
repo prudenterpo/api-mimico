@@ -5,7 +5,7 @@ import com.rpo.mimico.securities.JwtProperties;
 import com.rpo.mimico.dtos.LoginRequestDTO;
 import com.rpo.mimico.dtos.LoginResponseDTO;
 import com.rpo.mimico.entities.AuthCredentialsEntity;
-import com.rpo.mimico.entities.UsersEntity;
+import com.rpo.mimico.entities.UserEntity;
 import com.rpo.mimico.exceptions.InvalidCredentialsException;
 import com.rpo.mimico.repositories.AuthCredentialsRepository;
 import com.rpo.mimico.securities.JwtTokenProvider;
@@ -52,7 +52,7 @@ public class AuthService {
 
         String token = jwtTokenProvider.generateToken(userId, credentials.getEmail(), sessionId.toString(), roles);
 
-        UsersEntity user = credentials.getUser();
+        UserEntity user = credentials.getUser();
 
         return new LoginResponseDTO(token, user.getId().toString(), user.getNickname());
     }

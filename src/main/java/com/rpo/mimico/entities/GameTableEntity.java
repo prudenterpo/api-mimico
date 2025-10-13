@@ -30,7 +30,7 @@ public class GameTableEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "host_user_id", nullable = false)
-    private UsersEntity host;
+    private UserEntity host;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 20, nullable = false)

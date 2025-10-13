@@ -4,7 +4,7 @@ import com.rpo.mimico.dtos.RegisterRequestDTO;
 import com.rpo.mimico.dtos.RegisterResponseDTO;
 import com.rpo.mimico.entities.AuthCredentialsEntity;
 import com.rpo.mimico.entities.RolesEntity;
-import com.rpo.mimico.entities.UsersEntity;
+import com.rpo.mimico.entities.UserEntity;
 import com.rpo.mimico.exceptions.EmailAlreadyExistsException;
 import com.rpo.mimico.exceptions.NicknameAlreadyExistsException;
 import com.rpo.mimico.exceptions.RoleNotFoundException;
@@ -48,7 +48,7 @@ public class UserService {
                     return new RoleNotFoundException();
                 });
 
-        UsersEntity user = new UsersEntity();
+        UserEntity user = new UserEntity();
         user.setNickname(reguest.nickname());
         user.getRoles().add(playerRole);
         user = userRepository.save(user);

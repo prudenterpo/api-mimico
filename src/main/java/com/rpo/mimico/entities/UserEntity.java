@@ -13,7 +13,7 @@ import java.util.UUID;
 @Table(name = "users")
 @Getter
 @Setter
-public class UsersEntity {
+public class UserEntity {
 
     @Id
     @GeneratedValue

@@ -24,5 +24,5 @@ public class AuthCredentialsEntity {
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "user_id", nullable = false)
-    private UsersEntity user;
+    private UserEntity user;
 }

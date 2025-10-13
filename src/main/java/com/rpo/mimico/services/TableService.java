@@ -3,7 +3,7 @@ package com.rpo.mimico.services;
 import com.rpo.mimico.dtos.CreateTableRequestDTO;
 import com.rpo.mimico.dtos.TableResponseDTO;
 import com.rpo.mimico.entities.GameTableEntity;
-import com.rpo.mimico.entities.UsersEntity;
+import com.rpo.mimico.entities.UserEntity;
 import com.rpo.mimico.repositories.GameTableRepository;
 import com.rpo.mimico.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +23,7 @@ public class TableService {
 
     @Transactional
     public TableResponseDTO createTable(UUID hostUserId, CreateTableRequestDTO request) {
-        UsersEntity host = userRepository.findById(hostUserId)
+        UserEntity host = userRepository.findById(hostUserId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         GameTableEntity table = GameTableEntity.builder()
