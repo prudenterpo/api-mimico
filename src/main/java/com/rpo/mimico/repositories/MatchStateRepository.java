@@ -10,5 +10,5 @@ import java.util.UUID;
 @Repository
 public interface MatchStateRepository extends JpaRepository<MatchStateEntity, UUID> {
 
-    Optional<MatchStateEntity> fincByMatchId(UUID matchId);
+    Optional<MatchStateEntity> findByMatchId(UUID matchId);
 }
