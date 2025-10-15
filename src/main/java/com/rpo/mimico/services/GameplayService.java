@@ -149,13 +149,10 @@ public class GameplayService {
 
         log.info("Round timeout: match={}, team={}", matchId, matchState.getCurrentTeam());
 
-        // Clear round state
         clearRoundState(matchState);
 
-        // Switch turn to opponent
         switchTurn(matchState);
 
-        // Clear chat messages
         clearChatMessages(matchId);
 
         matchStateRepository.save(matchState);
@@ -192,11 +189,9 @@ public class GameplayService {
     }
 
     private void switchTurn(MatchStateEntity matchState) {
-        // Switch team (A ↔ B)
         Character newTeam = matchState.getCurrentTeam() == 'A' ? 'B' : 'A';
         matchState.setCurrentTeam(newTeam);
 
-        // Get first player from new team (ordered by player_order)
         List<MatchPlayerEntity> teamPlayers = matchPlayerRepository
                 .findByMatchIdAndTeam(matchState.getMatch().getId(), newTeam);
 
