@@ -12,6 +12,10 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ErrorResponseDTO {
 
+    public ErrorResponseDTO(String message) {
+        this.message = message;
+    }
+
     private LocalDateTime timestamp;
     private int status;
     private String error;
