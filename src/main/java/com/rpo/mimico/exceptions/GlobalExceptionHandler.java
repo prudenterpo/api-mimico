@@ -4,6 +4,8 @@ import com.rpo.mimico.dtos.ErrorResponseDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -50,10 +52,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ErrorResponseDTO> handleAccessDenied(
-            AccessDeniedException ex,
-            WebRequest request
-    ) {
+    public ResponseEntity<ErrorResponseDTO> handleAccessDenied(AccessDeniedException ex, WebRequest request) {
         log.warn("Access denied: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
@@ -91,21 +90,6 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(errorResponseDTO);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponseDTO> handleGlobalException(Exception ex, WebRequest request) {
-        log.error("Unexpected error occurred: ", ex);
-
-        ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                .error("Internal Server Error")
-                .message("An unexpected error occurred. Please try again later")
-                .path(request.getDescription(false).replace("uri=", ""))
-                .build();
-
-        return ResponseEntity.internalServerError().body(errorResponseDTO);
-    }
-
     @ExceptionHandler({EmailAlreadyExistsException.class, NicknameAlreadyExistsException.class})
     public ResponseEntity<ErrorResponseDTO> handleDuplicateResource(AuthenticationException ex, WebRequest request) {
         log.warn("Duplicate resource error: {}", ex.getMessage());
@@ -122,7 +106,7 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(RoleNotFoundException.class)
-    public ResponseEntity<ErrorResponseDTO> handleRoleNotFound( RoleNotFoundException ex, WebRequest request) {
+    public ResponseEntity<ErrorResponseDTO> handleRoleNotFound(RoleNotFoundException ex, WebRequest request) {
         log.error("Role configuration error: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
@@ -134,5 +118,89 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponseDTO);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponseDTO> handleIllegalArgument(IllegalArgumentException ex, WebRequest request) {
+        log.warn("Invalid argument: {}", ex.getMessage());
+
+        ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return ResponseEntity.badRequest().body(errorResponseDTO);
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponseDTO> handleIllegalState(IllegalStateException ex, WebRequest request) {
+        log.warn("Invalid state: {}", ex.getMessage());
+
+        ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return ResponseEntity.badRequest().body(errorResponseDTO);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponseDTO> handleGlobalException(Exception ex, WebRequest request) {
+        log.error("Unexpected error occurred: ", ex);
+
+        ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .error("Internal Server Error")
+                .message("An unexpected error occurred. Please try again later")
+                .path(request.getDescription(false).replace("uri=", ""))
+                .build();
+
+        return ResponseEntity.internalServerError().body(errorResponseDTO);
+    }
+
+    /**
+     * Handles exceptions thrown in WebSocket message handlers.
+     */
+    @MessageExceptionHandler(IllegalArgumentException.class)
+    @SendToUser("/queue/errors")
+    public ErrorResponseDTO handleWebSocketIllegalArgument(IllegalArgumentException ex) {
+        log.warn("WebSocket invalid argument: {}", ex.getMessage());
+        return ErrorResponseDTO.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .build();
+    }
+
+    @MessageExceptionHandler(IllegalStateException.class)
+    @SendToUser("/queue/errors")
+    public ErrorResponseDTO handleWebSocketIllegalState(IllegalStateException ex) {
+        log.warn("WebSocket invalid state: {}", ex.getMessage());
+        return ErrorResponseDTO.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(ex.getMessage())
+                .build();
+    }
+
+    @MessageExceptionHandler(Exception.class)
+    @SendToUser("/queue/errors")
+    public ErrorResponseDTO handleWebSocketGenericException(Exception ex) {
+        log.error("Unhandled WebSocket exception: {}", ex.getMessage(), ex);
+        return ErrorResponseDTO.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .error("Internal Server Error")
+                .message("An unexpected error occurred")
+                .build();
     }
 }
