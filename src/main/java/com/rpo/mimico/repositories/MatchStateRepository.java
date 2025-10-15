@@ -18,7 +18,7 @@ public interface MatchStateRepository extends JpaRepository<MatchStateEntity, UU
 
     @Query("SELECT ms FROM MatchStateEntity ms " +
             "WHERE ms.roundExpiresAt IS NOT NULL " +
-            "AND ms.roundExpiresAt < : now " +
+            "AND ms.roundExpiresAt < :now " +
             "AND ms.isPaused = false")
     List<MatchStateEntity> findExpiredRounds(@Param("now")LocalDateTime now);
 
