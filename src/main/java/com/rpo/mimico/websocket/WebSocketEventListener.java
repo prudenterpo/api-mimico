@@ -1,6 +1,7 @@
 package com.rpo.mimico.websocket;
 
 import com.rpo.mimico.services.OnlineUsersService;
+import com.rpo.mimico.services.ReconnectionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
@@ -17,9 +18,10 @@ import java.util.UUID;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class WebSocketEventLIstener {
+public class WebSocketEventListener {
 
     private final OnlineUsersService onlineUsersService;
+    private final ReconnectionService reconnectionService;
     private final SimpMessagingTemplate messagingTemplate;
 
     @EventListener
@@ -32,10 +34,12 @@ public class WebSocketEventLIstener {
 
             onlineUsersService.addUser(userId);
 
+            reconnectionService.handleReconnect(userId);
+
             broadcastOnlineUsers();
 
             log.info("User {} connected via WebSocket. Total online: {}",
-                    userId, onlineUsersService.getOnlineUsers());
+                    userId, onlineUsersService.getOnlineCount());
         }
     }
 
@@ -48,6 +52,8 @@ public class WebSocketEventLIstener {
             UUID userId = UUID.fromString(user.getName());
 
             onlineUsersService.removeUser(userId);
+
+            reconnectionService.handleDisconnect(userId);
 
             broadcastOnlineUsers();
 
@@ -62,6 +68,6 @@ public class WebSocketEventLIstener {
                 "users", onlineUsersService.getOnlineUsers(),
                 "count", onlineUsersService.getOnlineCount()
         );
-    messagingTemplate.convertAndSend("/topic/lobby/users", payload);
+        messagingTemplate.convertAndSend("/topic/lobby/users", payload);
     }
 }
