@@ -4,6 +4,7 @@ import com.rpo.mimico.dtos.InvitePlayerRequestDTO;
 import com.rpo.mimico.dtos.InviteResponseDTO;
 import com.rpo.mimico.services.InviteService;
 import com.rpo.mimico.services.OnlineUsersService;
+import com.rpo.mimico.services.TablePlayerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -22,6 +23,7 @@ public class TableWebSocketController {
 
     private final InviteService inviteService;
     private final OnlineUsersService onlineUsersService;
+    private final TablePlayerService tablePlayerService;
     private final SimpMessagingTemplate messagingTemplate;
 
     @MessageMapping("/table/invite")
@@ -69,9 +71,13 @@ public class TableWebSocketController {
 
         inviteService.removeInvite(tableId, userId);
 
-        // TODO: Add user to table (Phase 3)
-
-        log.info("Invite accepted: table={}, user={}", tableId, userId);
+        try {
+            tablePlayerService.addAcceptedPlayer(tableId, userId);
+            log.info("Invite accepted: table={}, user={}", tableId, userId);
+        } catch (Exception e) {
+            log.error("Error accepting invite: table={}, user={}, error={}", tableId, userId, e.getMessage(), e);
+            sendErrorToUser(userId, "Failed to accept invite: " + e.getMessage());
+        }
     }
 
     @MessageMapping("/table/invite/reject")
@@ -80,6 +86,11 @@ public class TableWebSocketController {
         UUID tableId = UUID.fromString(payload.get("tableId"));
 
         inviteService.removeInvite(tableId, userId);
+
+        messagingTemplate.convertAndSend(
+                "/topic/table/" + tableId + "/invite-rejected",
+                Map.of("type", "INVITE_REJECTED", "userId", userId.toString())
+        );
 
         log.info("Invite rejected: table={}, user={}", tableId, userId);
     }
