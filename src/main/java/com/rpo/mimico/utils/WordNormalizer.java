@@ -8,12 +8,12 @@ public class WordNormalizer {
 
     public static String normalize(String word) {
         if (word == null) return "";
-        String normalized = Normalizer.normalize(word, Normalizer.Form.NFC);
-        normalized = normalized.replaceAll("\\p{M}", "");
-        normalized = normalized.toLowerCase();
-        normalized = normalized.trim().replaceAll("\\s+", " ");
 
-        return normalized;
+        String normalized = Normalizer.normalize(word, Normalizer.Form.NFD);
+
+        normalized = normalized.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
+
+        return normalized.toLowerCase().trim().replaceAll("\\s+", " ");
     }
 
     public static boolean matches(String word1, String word2) {
