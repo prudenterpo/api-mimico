@@ -35,27 +35,31 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
     public Message<?> preSend(@NonNull Message<?> message, @NonNull MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
-        if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-            String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
+        if (accessor != null) {
+            log.info("WebSocket message: command={}, destination={}",
+                    accessor.getCommand(), accessor.getDestination());
 
-            if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-                log.warn("WebSocket connection rejected: MIssing or invalid Authorization header");
-                throw new IllegalArgumentException("Missing Authorization header");
-            }
+            if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                String authHeader = accessor.getFirstNativeHeader(AUTHORIZATION_HEADER);
 
-            String token = authHeader.substring(BEARER_PREFIX.length());
+                if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+                    log.warn("WebSocket connection rejected: Missing or invalid Authorization header");
+                    throw new IllegalArgumentException("Missing Authorization header");
+                }
 
-            try {
-                authenticateWebSocketConnection(accessor, token);
-            } catch (Exception e) {
-                log.error("WebSocket authentication failed: {}", e.getMessage());
-                throw new IllegalArgumentException("Invalid authentication token", e);
+                String token = authHeader.substring(BEARER_PREFIX.length());
+
+                try {
+                    authenticateWebSocketConnection(accessor, token);
+                } catch (Exception e) {
+                    log.error("WebSocket authentication failed: {}", e.getMessage());
+                    throw new IllegalArgumentException("Invalid authentication token", e);
+                }
             }
         }
 
         return message;
     }
-
     private void authenticateWebSocketConnection(StompHeaderAccessor accessor, String token) {
         Claims claims = jwtTokenProvider.validateToken(token);
 

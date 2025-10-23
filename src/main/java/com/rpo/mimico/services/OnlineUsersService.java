@@ -1,12 +1,14 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.entities.UserEntity;
+import com.rpo.mimico.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -16,6 +18,7 @@ public class OnlineUsersService {
     private static final String ONLINE_USERS_KEY = "lobby:online";
 
     private final StringRedisTemplate redisTemplate;
+    private final UserRepository userRepository;
 
     public void addUser(UUID userId) {
         redisTemplate.opsForSet().add(ONLINE_USERS_KEY, userId.toString());
@@ -29,6 +32,19 @@ public class OnlineUsersService {
 
     public Set<String> getOnlineUsers() {
         return redisTemplate.opsForSet().members(ONLINE_USERS_KEY);
+    }
+
+    public List<UserEntity> getOnlineUsersWithDetails() {
+        Set<String> onlineUserIds = getOnlineUsers();
+        if (onlineUserIds == null || onlineUserIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Set<UUID> uuids = onlineUserIds.stream()
+                .map(UUID::fromString)
+                .collect(Collectors.toSet());
+
+        return userRepository.findAllById(uuids);
     }
 
     public Long getOnlineCount() {
