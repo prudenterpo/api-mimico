@@ -61,25 +61,16 @@ public class ChatWebSocketController {
         try {
             ChatValidationResultDTO result = chatValidationService.validateGuess(matchId, chatMessage);
 
-            messagingTemplate.convertAndSend(
-                    "/topic/match/" + matchId + "/chat",
-                    result
-            );
+            messagingTemplate.convertAndSend("/topic/match/" + matchId + "/chat", result);
 
             if (result.isCorrect()) {
-                log.info("Correct guess! match={}, player={}, team={}",
-                        matchId, result.playerId(), result.guesserTeam());
+                log.info("Correct guess! match={}, player={}, team={}", matchId, result.playerId(), result.guesserTeam());
 
-                // Additional broadcast for correct guess (for UI animations, sounds, etc.)
-                messagingTemplate.convertAndSend(
-                        "/topic/match/" + matchId + "/correct-guess",
-                        result
-                );
+                messagingTemplate.convertAndSend("/topic/match/" + matchId + "/correct-guess", result);
             }
 
         } catch (IllegalStateException | IllegalArgumentException e) {
-            log.warn("Chat message rejected: match={}, player={}, reason={}",
-                    matchId, chatMessage.playerId(), e.getMessage());
+            log.warn("Chat message rejected: match={}, player={}, reason={}", matchId, chatMessage.playerId(), e.getMessage());
 
             messagingTemplate.convertAndSendToUser(
                     chatMessage.playerId().toString(),

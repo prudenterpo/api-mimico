@@ -14,14 +14,14 @@ import java.time.LocalDateTime;
 @Data
 @Entity
 @Table(name = "games")
-public class Game {
+public class GameEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne
     @JoinColumn(name = "room_id", nullable = false)
-    private GameRoom gameRoom;
+    private GameRoomEntity gameRoomEntity;
 
     @Column(name = "start_time")
     private LocalDateTime startTime;
@@ -31,5 +31,5 @@ public class Game {
 
     @ManyToOne
     @JoinColumn(name = "winner_team_id")
-    private Team winnerTeam;
+    private TeamEntity winnerTeamEntity;
 }

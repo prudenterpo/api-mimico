@@ -10,15 +10,18 @@ import jakarta.persistence.Column;
 
 @Data
 @Entity
-@Table(name = "teams")
-public class Team {
+@Table(name = "game_rooms")
+public class GameRoomEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 50)
+    @Column(length = 50)
     private String name;
 
-    @Column
-    private Integer score;
+    @Column(length = 20)
+    private String status;
+
+    @Column(length = 10)
+    private String code;
 }

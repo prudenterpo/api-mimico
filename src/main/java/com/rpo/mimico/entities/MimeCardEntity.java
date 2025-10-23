@@ -1,27 +1,24 @@
 package com.rpo.mimico.entities;
 
 import lombok.Data;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import jakarta.persistence.Column;
 
 @Data
 @Entity
-@Table(name = "game_rooms")
-public class GameRoom {
+@Table(name = "mime_cards")
+public class MimeCardEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(length = 50)
-    private String name;
+    private String category;
 
-    @Column(length = 20)
-    private String status;
-
-    @Column(length = 10)
-    private String code;
+    @Column
+    private String description;
 }

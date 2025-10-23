@@ -212,7 +212,7 @@ public class GameplayService {
                 .findByMatchIdAndTeam(matchState.getMatch().getId(), currentTeam);
 
         if (teamPlayers.size() != 2) {
-            throw new IllegalStateException("Team must have exactly 2 players");
+            throw new IllegalStateException("TeamEntity must have exactly 2 players");
         }
 
         UserEntity nextMime;
@@ -234,7 +234,7 @@ public class GameplayService {
                 .filter(p -> p.getUser().getId().equals(playerId))
                 .map(MatchPlayerEntity::getTeam)
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Player not in match: " + playerId));
+                .orElseThrow(() -> new IllegalArgumentException("PlayerEntity not in match: " + playerId));
     }
 
     private void clearRoundState(MatchStateEntity matchState) {
