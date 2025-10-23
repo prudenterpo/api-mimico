@@ -1,6 +1,6 @@
 package com.rpo.mimico.repositories;
 
-import com.rpo.mimico.entities.GameRoom;
+import com.rpo.mimico.entities.GameRoomEntity;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
@@ -8,19 +8,19 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DataJpaTest
-public class GameRoomRepositoryTest {
+public class GameEntityRoomRepositoryTest {
 
     @Autowired
     private GameRoomRepository gameRoomRepository;
 
     @Test
     public void shouldSaveGameRoom() {
-        GameRoom room = new GameRoom();
+        GameRoomEntity room = new GameRoomEntity();
         room.setName("Test Room");
         room.setStatus("active");
         room.setCode("123456");
 
-        GameRoom savedRoom = gameRoomRepository.save(room);
+        GameRoomEntity savedRoom = gameRoomRepository.save(room);
 
         assertNotNull(savedRoom);
         assertEquals(savedRoom, room);
@@ -28,13 +28,13 @@ public class GameRoomRepositoryTest {
 
     @Test
     public void shouldGetGameRoomById() {
-        GameRoom room = new GameRoom();
+        GameRoomEntity room = new GameRoomEntity();
         room.setName("Test Room");
         room.setStatus("active");
         room.setCode("123456");
         gameRoomRepository.save(room);
 
-        GameRoom foundRoom = gameRoomRepository.findById(room.getId()).orElse(null);
+        GameRoomEntity foundRoom = gameRoomRepository.findById(room.getId()).orElse(null);
 
         assertNotNull(foundRoom);
         assertEquals(room, foundRoom);
@@ -42,14 +42,14 @@ public class GameRoomRepositoryTest {
 
     @Test
     public void shouldUpdateGameRoom() {
-        GameRoom room = new GameRoom();
+        GameRoomEntity room = new GameRoomEntity();
         room.setName("Test Room");
         room.setStatus("active");
         room.setCode("123456");
         gameRoomRepository.save(room);
 
         room.setStatus("waiting");
-        GameRoom updatedRoom = gameRoomRepository.save(room);
+        GameRoomEntity updatedRoom = gameRoomRepository.save(room);
 
         assertNotNull(updatedRoom);
         assertEquals("waiting", updatedRoom.getStatus());
@@ -57,7 +57,7 @@ public class GameRoomRepositoryTest {
 
     @Test
     public void shouldDeleteGameRoom() {
-        GameRoom room = new GameRoom();
+        GameRoomEntity room = new GameRoomEntity();
         room.setName("Test Room");
         room.setStatus("active");
         room.setCode("123456");

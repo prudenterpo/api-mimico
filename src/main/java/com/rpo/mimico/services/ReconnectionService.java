@@ -174,7 +174,7 @@ public class ReconnectionService {
                 .filter(p -> p.getUser().getId().equals(userId))
                 .map(MatchPlayerEntity::getTeam)
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Player not in match: " + userId));
+                .orElseThrow(() -> new IllegalArgumentException("PlayerEntity not in match: " + userId));
     }
 
     private String buildReconnectionKey(UUID matchId, UUID userId) {
@@ -213,7 +213,7 @@ public class ReconnectionService {
                         "type", "MATCH_ENDED",
                         "winnerTeam", winnerTeam,
                         "reason","forfeit",
-                        "message", "Match ended. Team " + winnerTeam + " wins by forfeit."
+                        "message", "Match ended. TeamEntity " + winnerTeam + " wins by forfeit."
                 )
         );
     }
@@ -238,6 +238,6 @@ public class ReconnectionService {
                 gameState
         );
 
-        log.debug("Game state sent to reconnected player: matchId={}, userId={}", matchId, userId);
+        log.debug("GameEntity state sent to reconnected player: matchId={}, userId={}", matchId, userId);
     }
 }

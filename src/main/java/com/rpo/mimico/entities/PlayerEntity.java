@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 @Data
 @Entity
 @Table(name = "players")
-public class Player {
+public class PlayerEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -23,9 +23,9 @@ public class Player {
 
     @ManyToOne
     @JoinColumn(name = "room_id")
-    private GameRoom gameRoom;
+    private GameRoomEntity gameRoomEntity;
 
     @ManyToOne
     @JoinColumn(name = "team_id")
-    private Team team;
+    private TeamEntity teamEntity;
 }

@@ -68,7 +68,7 @@ public class ReconnectionServiceTest {
 
         user = new UserEntity();
         user.setId(userId);
-        user.setNickname("Test Player");
+        user.setNickname("Test PlayerEntity");
 
         match = new MatchEntity();
         match.setId(matchId);
