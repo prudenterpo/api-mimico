@@ -4,6 +4,7 @@ import com.rpo.mimico.dtos.LoginRequestDTO;
 import com.rpo.mimico.dtos.LoginResponseDTO;
 import com.rpo.mimico.dtos.RegisterRequestDTO;
 import com.rpo.mimico.dtos.RegisterResponseDTO;
+import com.rpo.mimico.dtos.UserProfileDTO;
 import com.rpo.mimico.services.AuthService;
 import com.rpo.mimico.services.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,6 +40,7 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<RegisterResponseDTO> register(@Valid @RequestBody RegisterRequestDTO request) {
         RegisterResponseDTO response = userService.register(request);
+
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
     @Operation(
@@ -66,7 +68,25 @@ public class AuthController {
     public ResponseEntity<String> logout(Authentication authentication) {
         UUID userId = UUID.fromString(authentication.getName());
         authService.logout(userId);
+
         return ResponseEntity.ok("Logout successful");
+    }
+
+    @Operation(
+            summary = "Get current user profile",
+            description = "Returns the profile information of the currently authenticated ",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "User profile retrieved successfully"),
+                    @ApiResponse(responseCode = "401", description = "Not authenticated"),
+                    @ApiResponse(responseCode = "404", description = "User not found")
+            }
+    )
+    @GetMapping("/me")
+    public ResponseEntity<UserProfileDTO> getCurrentUser(Authentication authentication) {
+        UUID userId = UUID.fromString(authentication.getName());
+        UserProfileDTO userProfile = userService.getUserProfile(userId);
+
+        return ResponseEntity.ok(userProfile);
     }
 }
 

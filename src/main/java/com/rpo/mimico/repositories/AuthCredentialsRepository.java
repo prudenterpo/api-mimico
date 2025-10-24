@@ -8,4 +8,6 @@ import java.util.UUID;
 
 public interface AuthCredentialsRepository extends JpaRepository<AuthCredentialsEntity, UUID> {
     Optional<AuthCredentialsEntity> findByEmail(String email);
+
+    Optional<AuthCredentialsEntity> findByUser_Id(UUID userId);
 }

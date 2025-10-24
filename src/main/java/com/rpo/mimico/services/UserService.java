@@ -2,12 +2,14 @@ package com.rpo.mimico.services;
 
 import com.rpo.mimico.dtos.RegisterRequestDTO;
 import com.rpo.mimico.dtos.RegisterResponseDTO;
+import com.rpo.mimico.dtos.UserProfileDTO;
 import com.rpo.mimico.entities.AuthCredentialsEntity;
 import com.rpo.mimico.entities.RolesEntity;
 import com.rpo.mimico.entities.UserEntity;
 import com.rpo.mimico.exceptions.EmailAlreadyExistsException;
 import com.rpo.mimico.exceptions.NicknameAlreadyExistsException;
 import com.rpo.mimico.exceptions.RoleNotFoundException;
+import com.rpo.mimico.exceptions.UserNotFoundException;
 import com.rpo.mimico.repositories.AuthCredentialsRepository;
 import com.rpo.mimico.repositories.RoleRepository;
 import com.rpo.mimico.repositories.UserRepository;
@@ -16,6 +18,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -68,6 +74,37 @@ public class UserService {
                 reguest.email(),
                 user.getNickname(),
                 "User registered successfully"
+        );
+    }
+
+    public UserProfileDTO getUserProfile(UUID userId) {
+        log.info("Fetching user profile for ID: {}", userId);
+
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> {
+                    log.warn("User not found with ID: {}", userId);
+                    return new UserNotFoundException();
+                });
+
+        AuthCredentialsEntity credentials = authCredentialsRepository.findByUser_Id(userId)
+                .orElseThrow(() -> {
+                    log.error("Auth credentials not found for user ID: {}", userId);
+                    return new UserNotFoundException();
+                });
+
+        Set<String> roleNames = user.getRoles().stream()
+                .map(RolesEntity::getName)
+                .collect(Collectors.toSet());
+
+        log.debug("User profile retrieved successfully for ID: {}", userId);
+
+        return new UserProfileDTO(
+                user.getId().toString(),
+                credentials.getEmail(),
+                user.getNickname(),
+                user.getAvatarUrl(),
+                roleNames,
+                user.getCreatedAt()
         );
     }
 }
