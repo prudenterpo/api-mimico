@@ -43,6 +43,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 autheticateUser(token, request);
             }
+
         } catch (Exception ex) {
             log.error("Cannot set user authentication: {}", ex.getMessage());
             SecurityContextHolder.clearContext();

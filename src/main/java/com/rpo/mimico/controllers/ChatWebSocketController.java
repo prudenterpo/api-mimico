@@ -38,20 +38,6 @@ public class ChatWebSocketController {
     private final ChatValidationService chatValidationService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    /**
-     * Handles chat messages (guesses) from players during a round.
-     *
-     * Client sends:
-     * stompClient.send('/app/match/{matchId}/chat', {}, JSON.stringify({
-     *   playerId: "player-uuid",
-     *   message: "cachorro"
-     * }));
-     *
-     * All clients receive:
-     * stompClient.subscribe('/topic/match/{matchId}/chat', (msg) => {
-     *   // { playerId: "...", playerName: "...", message: "cachorro", isCorrect: true/false }
-     * });
-     */
     @MessageMapping("/match/{matchId}/chat")
     public void handleChatMessage(@DestinationVariable UUID matchId, @Payload ChatMessageDTO chatMessage) {
 

@@ -42,6 +42,7 @@ public class MatchController {
     @PostMapping("/start")
     public ResponseEntity<MatchResponseDTO> startMatch(@Valid @RequestBody StartMatchRequestDTO request) {
         MatchResponseDTO response = matchService.startMatch(request);
+
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
