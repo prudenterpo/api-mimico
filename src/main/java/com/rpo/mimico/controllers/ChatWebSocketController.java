@@ -14,7 +14,7 @@ import org.springframework.stereotype.Controller;
 
 import java.util.UUID;
 
-/**
+/*
  * WebSocket controller for handling chat messages during gameplay.
  *
  * Players send guesses via:
