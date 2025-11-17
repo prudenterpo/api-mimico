@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +28,7 @@ public class TablePlayerService {
 
     private static final String TABLE_ACCEPTED_KEY_TEMPLATE = "table:%s:accepted";
     private static final String TABLE_HOST_KEY_TEMPLATE = "table:%s:host";
+    private static final String TABLE_READY_KEY_TEMPLATE = "table:%s:ready";
     private static final int REQUIRED_PLAYERS = 4;
 
     private final StringRedisTemplate redisTemplate;
@@ -94,11 +96,35 @@ public class TablePlayerService {
     public void cleanupTable(UUID tableId) {
         String acceptedKey = String.format(TABLE_ACCEPTED_KEY_TEMPLATE, tableId);
         String hostKey = String.format(TABLE_HOST_KEY_TEMPLATE, tableId);
+        String readyKey = String.format(TABLE_READY_KEY_TEMPLATE, tableId);
 
         redisTemplate.delete(acceptedKey);
         redisTemplate.delete(hostKey);
+        redisTemplate.delete(readyKey);
 
         log.info("Table cleaned up: tableId={}", tableId);
+    }
+
+    public void setPlayerReady(UUID tableId, UUID userId, boolean isReady) {
+        String readyKey = String.format(TABLE_READY_KEY_TEMPLATE, tableId);
+
+        if (isReady) {
+            redisTemplate.opsForSet().add(readyKey, userId.toString());
+            log.info("Player marked as ready: tableId={}, userId{}", tableId, userId);
+
+        } else {
+            redisTemplate.opsForSet().remove(readyKey, userId.toString());
+            log.info("Player marked as not ready: tableId={}, userId{}", tableId, userId);
+        }
+
+        redisTemplate.expire(readyKey, Duration.ofHours(1));
+    }
+
+    public List<String> getReadyPlayers(UUID tableId) {
+        String readyKey = String.format(TABLE_READY_KEY_TEMPLATE, tableId);
+        Set<String> readySet = redisTemplate.opsForSet().members(readyKey);
+
+        return readySet != null ? List.copyOf(readySet) : List.of();
     }
 
     private MatchResponseDTO startMatch(UUID tableId) {

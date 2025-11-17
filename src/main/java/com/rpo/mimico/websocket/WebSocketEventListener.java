@@ -65,7 +65,7 @@ public class WebSocketEventListener {
     private void broadcastOnlineUsers() {
         Map<String, Object> payload = Map.of(
                 "type", "ONLINE_USERS_UPDATE",
-                "users", onlineUsersService.getOnlineUsers(),
+                "users", onlineUsersService.getOnlineUsersWithDetails(),
                 "count", onlineUsersService.getOnlineCount()
         );
         messagingTemplate.convertAndSend("/topic/lobby/users", payload);

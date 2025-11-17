@@ -40,6 +40,8 @@ public class TableWebSocketController {
 
         inviteService.createInvite(tableId, invitedUserId, hostUserId);
 
+        tablePlayerService.initializeTable(tableId, hostUserId);
+
         InviteResponseDTO inviteData = InviteResponseDTO.builder()
                 .tableId(tableId)
                 .tableName(request.tableName())
@@ -105,16 +107,18 @@ public class TableWebSocketController {
         log.info("Received ready toggle: table={}, user={}, ready={}", tableId, userId, ready);
 
         try {
-            // TODO: Implementar lógica no TablePlayerService
-            // tablePlayerService.setPlayerReady(tableId, userId, ready);
+            tablePlayerService.setPlayerReady(tableId, userId, ready);
 
-            log.info("Player ready status would be updated: table={}, user={}, ready={}", tableId, userId, ready);
+            List<String> readyPlayers = tablePlayerService.getReadyPlayers(tableId);
+
+            log.info("Player ready status updated: table={}, user={}, ready={}, totalReady={}",
+                    tableId, userId, ready, readyPlayers.size());
 
             messagingTemplate.convertAndSend(
                     "/topic/table/" + tableId + "/ready",
                     Map.of(
                             "type", "READY_STATUS_UPDATE",
-                            "readyPlayers", ready ? List.of(userId.toString()) : List.of()
+                            "readyPlayers", readyPlayers
                     )
             );
 
@@ -123,7 +127,6 @@ public class TableWebSocketController {
             sendErrorToUser(userId, "Failed to update ready status");
         }
     }
-
     private void sendErrorToUser(UUID userId, String message) {
         messagingTemplate.convertAndSendToUser(
                 userId.toString(),
