@@ -40,7 +40,9 @@ public class TableWebSocketController {
 
         inviteService.createInvite(tableId, invitedUserId, hostUserId);
 
-        tablePlayerService.initializeTable(tableId, hostUserId);
+        if (tablePlayerService.getAcceptedCount(tableId) == 0) tablePlayerService.initializeTable(tableId, hostUserId);
+
+        tablePlayerService.addInvitedPlayer(tableId, invitedUserId);
 
         InviteResponseDTO inviteData = InviteResponseDTO.builder()
                 .tableId(tableId)
@@ -77,6 +79,7 @@ public class TableWebSocketController {
         try {
             tablePlayerService.addAcceptedPlayer(tableId, userId);
             log.info("Invite accepted: table={}, user={}", tableId, userId);
+
         } catch (Exception e) {
             log.error("Error accepting invite: table={}, user={}, error={}", tableId, userId, e.getMessage(), e);
             sendErrorToUser(userId, "Failed to accept invite: " + e.getMessage());
@@ -90,10 +93,7 @@ public class TableWebSocketController {
 
         inviteService.removeInvite(tableId, userId);
 
-        messagingTemplate.convertAndSend(
-                "/topic/table/" + tableId + "/invite-rejected",
-                Map.of("type", "INVITE_REJECTED", "userId", userId.toString())
-        );
+        tablePlayerService.addRejectedPlayer(tableId, userId);
 
         log.info("Invite rejected: table={}, user={}", tableId, userId);
     }
@@ -113,14 +113,6 @@ public class TableWebSocketController {
 
             log.info("Player ready status updated: table={}, user={}, ready={}, totalReady={}",
                     tableId, userId, ready, readyPlayers.size());
-
-            messagingTemplate.convertAndSend(
-                    "/topic/table/" + tableId + "/ready",
-                    Map.of(
-                            "type", "READY_STATUS_UPDATE",
-                            "readyPlayers", readyPlayers
-                    )
-            );
 
         } catch (Exception e) {
             log.error("Error updating ready status: table={}, user={}, error={}", tableId, userId, e.getMessage(), e);

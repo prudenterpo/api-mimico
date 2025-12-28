@@ -1,5 +1,7 @@
 package com.rpo.mimico.websocket;
 
+import com.rpo.mimico.dtos.OnlineUserDTO;
+import com.rpo.mimico.entities.UserEntity;
 import com.rpo.mimico.services.OnlineUsersService;
 import com.rpo.mimico.services.ReconnectionService;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +14,7 @@ import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 import java.security.Principal;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -63,9 +66,15 @@ public class WebSocketEventListener {
     }
 
     private void broadcastOnlineUsers() {
+        List<UserEntity> onlineUsers = onlineUsersService.getOnlineUsersWithDetails();
+
+        List<OnlineUserDTO> userDtos = onlineUsers.stream()
+                .map(user -> new OnlineUserDTO(user.getId(), user.getNickname(), "", true))
+                .toList();
+
         Map<String, Object> payload = Map.of(
                 "type", "ONLINE_USERS_UPDATE",
-                "users", onlineUsersService.getOnlineUsersWithDetails(),
+                "users", userDtos,
                 "count", onlineUsersService.getOnlineCount()
         );
         messagingTemplate.convertAndSend("/topic/lobby/users", payload);
