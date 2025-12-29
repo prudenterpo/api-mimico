@@ -14,6 +14,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -45,7 +46,21 @@ public class TablePlayerService {
     private final MatchService matchService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public void initializeTable(UUID tableId, UUID hostUserId) {
+    public void initializeTable(UUID hostUserId, String tableName) {
+        UserEntity host = userRepository.findById(hostUserId)
+                .orElseThrow(() -> new IllegalArgumentException("Host not found: " + hostUserId));
+
+        GameTableEntity table = GameTableEntity.builder()
+                .name(tableName)
+                .host(host)
+                .status(GameTableEntity.TableStatus.WAITING)
+                .build();
+
+        GameTableEntity savedTable = gameTableRepository.save(table);
+
+        final UUID tableId = savedTable.getId();
+        log.info("Table {} created by user {}", tableId, hostUserId);
+
         String hostKey = String.format(TABLE_HOST_KEY_TEMPLATE, tableId);
         String acceptedKey = String.format(TABLE_ACCEPTED_KEY_TEMPLATE, tableId);
 

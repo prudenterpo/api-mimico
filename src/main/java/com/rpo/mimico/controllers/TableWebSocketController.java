@@ -40,7 +40,9 @@ public class TableWebSocketController {
 
         inviteService.createInvite(tableId, invitedUserId, hostUserId);
 
-        if (tablePlayerService.getAcceptedCount(tableId) == 0) tablePlayerService.initializeTable(tableId, hostUserId);
+        if (tablePlayerService.getAcceptedCount(tableId) == 0) {
+            tablePlayerService.initializeTable(hostUserId, request.tableName());
+        }
 
         tablePlayerService.addInvitedPlayer(tableId, invitedUserId);
 
@@ -56,8 +58,8 @@ public class TableWebSocketController {
                 invitedUserId.toString(),
                 "/queue/invite",
                 Map.of(
-                        "type", "GAME_INVITE",
-                        "data", inviteData
+                    "type", "GAME_INVITE",
+                    "data", inviteData
                 )
         );
 
