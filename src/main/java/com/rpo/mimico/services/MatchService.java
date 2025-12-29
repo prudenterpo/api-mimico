@@ -1,5 +1,6 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.dtos.MatchEndedDTO;
 import com.rpo.mimico.dtos.MatchResponseDTO;
 import com.rpo.mimico.dtos.StartMatchRequestDTO;
 import com.rpo.mimico.entities.GameTableEntity;
@@ -101,6 +102,38 @@ public class MatchService {
                 .teamAPosition(0)
                 .teamBPosition(0)
                 .startedAt(match.getStartedAt())
+                .build();
+    }
+
+    @Transactional
+    public MatchEndedDTO abandonMatch(UUID tableId, UUID userId) {
+        MatchEntity match = matchRepository.findByTableIdAndFinishedAtIsNull(tableId)
+                .orElseThrow(() -> new IllegalArgumentException("No active match found for table: " + tableId));
+
+        MatchPlayerEntity player = matchPlayerRepository.findByMatchIdAndUserId(match.getId(), userId)
+                .orElseThrow(() -> new IllegalArgumentException("Player not found in match: " + userId));
+
+        Character abandonedTeam = player.getTeam();
+        Character winnerTeam = abandonedTeam == 'A' ? 'B' : 'A';
+
+        match.setWinnerTeam(winnerTeam);
+        match.setFinishedAt(LocalDateTime.now());
+        matchRepository.save(match);
+
+        GameTableEntity table = match.getTable();
+        table.setStatus(GameTableEntity.TableStatus.FINISHED);
+        gameTableRepository.save(table);
+
+        log.info("Match abandoned: matchId={}, tableId={}, abandonedBy={}, winnerTeam={}",
+                match.getId(), tableId, userId, winnerTeam);
+
+        return MatchEndedDTO.builder()
+                .matchId(match.getId())
+                .tableId(tableId)
+                .winnerTeam(winnerTeam)
+                .reason("ABANDONED")
+                .abandonedByUserId(userId)
+                .abandonedByNickname(player.getUser().getNickname())
                 .build();
     }
 

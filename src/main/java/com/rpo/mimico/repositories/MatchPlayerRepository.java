@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -20,4 +21,6 @@ public interface MatchPlayerRepository extends JpaRepository<MatchPlayerEntity, 
             "WHERE mp.user.id = :userId " +
             "AND mp.match.finishedAt IS NULL")
     List<MatchPlayerEntity> findActiveMatchesByUserId(@Param("userId") UUID userId);
+
+    Optional<MatchPlayerEntity> findByMatchIdAndUserId(UUID matchId, UUID userId);
 }
