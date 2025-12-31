@@ -67,7 +67,7 @@ public class MatchService {
                     .match(match)
                     .user(user)
                     .team(team)
-                    .playerOrder(i)
+                    .playerOrder(i + 1)
                     .build();
 
             matchPlayerRepository.save(matchPlayer);

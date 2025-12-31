@@ -47,6 +47,7 @@ public class GameTableEntity {
     public enum TableStatus {
         WAITING,
         IN_PROGRESS,
-        FINISHED
+        FINISHED,
+        CANCELLED
     }
 }

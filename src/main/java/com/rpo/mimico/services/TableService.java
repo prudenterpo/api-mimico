@@ -20,6 +20,7 @@ public class TableService {
 
     private final GameTableRepository gameTableRepository;
     private final UserRepository userRepository;
+    private final TablePlayerService tablePlayerService;
 
     @Transactional
     public TableResponseDTO createTable(UUID hostUserId, CreateTableRequestDTO request) {
@@ -35,6 +36,8 @@ public class TableService {
         GameTableEntity savedTable = gameTableRepository.save(table);
 
         log.info("Table {} created by user {}", savedTable.getId(), hostUserId);
+
+        tablePlayerService.initializeTableRedis(savedTable.getId(), hostUserId);
 
         return TableResponseDTO.builder()
                 .id(savedTable.getId())

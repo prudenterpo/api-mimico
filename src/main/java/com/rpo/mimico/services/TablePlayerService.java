@@ -14,7 +14,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -46,28 +45,17 @@ public class TablePlayerService {
     private final MatchService matchService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public void initializeTable(UUID hostUserId, String tableName) {
-        UserEntity host = userRepository.findById(hostUserId)
-                .orElseThrow(() -> new IllegalArgumentException("Host not found: " + hostUserId));
-
-        GameTableEntity table = GameTableEntity.builder()
-                .name(tableName)
-                .host(host)
-                .status(GameTableEntity.TableStatus.WAITING)
-                .build();
-
-        GameTableEntity savedTable = gameTableRepository.save(table);
-
-        final UUID tableId = savedTable.getId();
-        log.info("Table {} created by user {}", tableId, hostUserId);
-
+    public void initializeTableRedis(UUID tableId, UUID hostUserId) {
         String hostKey = String.format(TABLE_HOST_KEY_TEMPLATE, tableId);
         String acceptedKey = String.format(TABLE_ACCEPTED_KEY_TEMPLATE, tableId);
 
         redisTemplate.opsForValue().set(hostKey, hostUserId.toString());
         redisTemplate.opsForSet().add(acceptedKey, hostUserId.toString());
 
-        log.info("Table initialized: tableId={}, host={}, acceptedCount=1/4", tableId, hostUserId);
+        redisTemplate.expire(hostKey, Duration.ofHours(2));
+        redisTemplate.expire(acceptedKey, Duration.ofHours(2));
+
+        log.info("Table initialized in Redis: tableId={}, host={}, acceptedCount=1/4", tableId, hostUserId);
 
         broadcastTablePlayersUpdate(tableId);
     }
@@ -144,6 +132,34 @@ public class TablePlayerService {
         return readySet != null ? List.copyOf(readySet) : List.of();
     }
 
+    public void cancelTable(UUID tableId, UUID initiatedByUserId) {
+        Set<String> allPlayers = getAllTablePlayers(tableId);
+
+        String hostKey = String.format(TABLE_HOST_KEY_TEMPLATE, tableId);
+        String acceptedKey = String.format(TABLE_ACCEPTED_KEY_TEMPLATE, tableId);
+        String invitedKey = String.format(TABLE_INVITED_KEY_TEMPLATE, tableId);
+        String rejectedKey = String.format(TABLE_REJECTED_KEY_TEMPLATE, tableId);
+        String readyKey = String.format(TABLE_READY_KEY_TEMPLATE, tableId);
+
+        redisTemplate.delete(List.of(hostKey, acceptedKey, invitedKey, rejectedKey, readyKey));
+
+        gameTableRepository.findById(tableId).ifPresent(table -> {
+            table.setStatus(GameTableEntity.TableStatus.CANCELLED);
+            gameTableRepository.save(table);
+        });
+
+        messagingTemplate.convertAndSend(
+                "/topic/table/" + tableId + "/cancelled",
+                Map.of(
+                        "type", "TABLE_CANCELLED",
+                        "tableId", tableId.toString(),
+                        "cancelledBy", initiatedByUserId.toString()
+                )
+        );
+
+        log.info("Table cancelled and all players notified: tableId={}, players={}", tableId, allPlayers.size());
+    }
+
     public void removeAcceptedPlayer(UUID tableId, UUID userId) {
         String acceptedKey = String.format(TABLE_ACCEPTED_KEY_TEMPLATE, tableId);
         redisTemplate.opsForSet().remove(acceptedKey, userId.toString());
@@ -166,6 +182,21 @@ public class TablePlayerService {
         return getAcceptedCount(tableId) >= REQUIRED_PLAYERS;
     }
 
+    private Set<String> getAllTablePlayers(UUID tableId) {
+        Set<String> allPlayers = new HashSet<>();
+
+        String acceptedKey = String.format(TABLE_ACCEPTED_KEY_TEMPLATE, tableId);
+        String invitedKey = String.format(TABLE_INVITED_KEY_TEMPLATE, tableId);
+
+        Set<String> accepted = redisTemplate.opsForSet().members(acceptedKey);
+        Set<String> invited = redisTemplate.opsForSet().members(invitedKey);
+
+        if (accepted != null) allPlayers.addAll(accepted);
+        if (invited != null) allPlayers.addAll(invited);
+
+        return allPlayers;
+
+    }
     private List<TablePlayerDTO> getTablePlayersWithDetails(UUID tableId) {
         String hostKey = String.format(TABLE_HOST_KEY_TEMPLATE, tableId);
         String acceptedKey = String.format(TABLE_ACCEPTED_KEY_TEMPLATE, tableId);

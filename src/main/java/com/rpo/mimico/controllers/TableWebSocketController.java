@@ -40,10 +40,6 @@ public class TableWebSocketController {
 
         inviteService.createInvite(tableId, invitedUserId, hostUserId);
 
-        if (tablePlayerService.getAcceptedCount(tableId) == 0) {
-            tablePlayerService.initializeTable(hostUserId, request.tableName());
-        }
-
         tablePlayerService.addInvitedPlayer(tableId, invitedUserId);
 
         InviteResponseDTO inviteData = InviteResponseDTO.builder()
@@ -121,6 +117,25 @@ public class TableWebSocketController {
             sendErrorToUser(userId, "Failed to update ready status");
         }
     }
+
+    @MessageMapping("/table/leave")
+    public void leaveTable(@Payload Map<String, String> payload, Principal principal) {
+        UUID userId = UUID.fromString(principal.getName());
+        UUID tableId = UUID.fromString(payload.get("tableId"));
+
+        log.info("Player leaving table: table={}, user={}", tableId, userId);
+
+        try {
+            tablePlayerService.cancelTable(tableId, userId);
+            log.info("Table cancelled: table={}, initiatedBy={}", tableId, userId);
+
+        } catch (Exception e) {
+            log.error("Error leaving table: table={}, userId={}, error={}", tableId, userId, e.getMessage(), e);
+            sendErrorToUser(userId, "Failed to leave table: " +  e.getMessage());
+        }
+
+    }
+
     private void sendErrorToUser(UUID userId, String message) {
         messagingTemplate.convertAndSendToUser(
                 userId.toString(),
