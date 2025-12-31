@@ -88,11 +88,6 @@ public class TablePlayerService {
                 tableId, userId, acceptedCount);
 
         broadcastTablePlayersUpdate(tableId);
-
-        if (acceptedCount != null && acceptedCount >= REQUIRED_PLAYERS) {
-            MatchResponseDTO matchResponse = startMatch(tableId);
-            broadcastMatchStarted(tableId, matchResponse);
-        }
     }
 
     public void addRejectedPlayer(UUID tableId, UUID userId) {
@@ -113,18 +108,25 @@ public class TablePlayerService {
 
         if (isReady) {
             redisTemplate.opsForSet().add(readyKey, userId.toString());
-            log.info("Player marked as ready: tableId={}, userId{}", tableId, userId);
-
+            log.info("Player marked as ready: tableId={}, userId={}", tableId, userId);
         } else {
             redisTemplate.opsForSet().remove(readyKey, userId.toString());
-            log.info("Player marked as not ready: tableId={}, userId{}", tableId, userId);
+            log.info("Player marked as not ready: tableId={}, userId={}", tableId, userId);
         }
 
         redisTemplate.expire(readyKey, Duration.ofHours(1));
 
         broadcastTablePlayersUpdate(tableId);
-    }
 
+        if (isReady) {
+            Long readyCount = redisTemplate.opsForSet().size(readyKey);
+            if (readyCount != null && readyCount >= REQUIRED_PLAYERS) {
+                log.info("All players ready, starting match: tableId={}", tableId);
+                MatchResponseDTO matchResponse = startMatch(tableId);
+                broadcastMatchStarted(tableId, matchResponse);
+            }
+        }
+    }
     public List<String> getReadyPlayers(UUID tableId) {
         String readyKey = String.format(TABLE_READY_KEY_TEMPLATE, tableId);
         Set<String> readySet = redisTemplate.opsForSet().members(readyKey);
