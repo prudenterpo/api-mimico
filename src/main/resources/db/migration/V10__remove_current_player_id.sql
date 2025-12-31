@@ -1,0 +1,1 @@
+ALTER TABLE match_state DROP COLUMN IF EXISTS current_player_id;
