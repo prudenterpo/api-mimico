@@ -82,7 +82,7 @@ class ChatValidationServiceTest {
     }
 
     @Test
-    void validateGuess_correctWord_normalTile_callsHandleCorrectGuess() {
+    void processChatMessage_correctWord_normalTile_callsHandleCorrectGuess() {
         ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "cachorro");
 
         when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
@@ -90,7 +90,7 @@ class ChatValidationServiceTest {
         when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
                 .thenReturn(createMatchPlayers());
 
-        ChatValidationResultDTO result = chatValidationService.validateGuess(matchId, chatMessage);
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
 
         assertTrue(result.isCorrect());
         assertEquals(teammateId, result.playerId());
@@ -100,7 +100,7 @@ class ChatValidationServiceTest {
     }
 
     @Test
-    void validateGuess_incorrectWord_doesNotCallHandleCorrectGuess() {
+    void processChatMessage_incorrectWord_doesNotCallHandleCorrectGuess() {
         ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "gato");
 
         when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
@@ -108,14 +108,14 @@ class ChatValidationServiceTest {
         when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
                 .thenReturn(createMatchPlayers());
 
-        ChatValidationResultDTO result = chatValidationService.validateGuess(matchId, chatMessage);
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
 
         assertFalse(result.isCorrect());
         verify(gameplayService, never()).handleCorrectGuess(any(), any());
     }
 
     @Test
-    void validateGuess_caseInsensitive_acceptsBothCases() {
+    void processChatMessage_caseInsensitive_acceptsBothCases() {
         ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "CACHORRO");
 
         when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
@@ -123,13 +123,13 @@ class ChatValidationServiceTest {
         when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
                 .thenReturn(createMatchPlayers());
 
-        ChatValidationResultDTO result = chatValidationService.validateGuess(matchId, chatMessage);
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
 
         assertTrue(result.isCorrect());
     }
 
     @Test
-    void validateGuess_ignoresAccents() {
+    void processChatMessage_ignoresAccents() {
         word.setText("Café");
         ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "cafe");
 
@@ -138,33 +138,23 @@ class ChatValidationServiceTest {
         when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
                 .thenReturn(createMatchPlayers());
 
-        ChatValidationResultDTO result = chatValidationService.validateGuess(matchId, chatMessage);
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
 
         assertTrue(result.isCorrect());
     }
 
     @Test
-    void validateGuess_mimePlayerCannotChat() {
+    void processChatMessage_mimePlayerCannotChat_duringMimePhase() {
         ChatMessageDTO chatMessage = new ChatMessageDTO(mimePlayerId, "cachorro");
 
         when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
 
         assertThrows(IllegalArgumentException.class,
-                () -> chatValidationService.validateGuess(matchId, chatMessage));
+                () -> chatValidationService.processChatMessage(matchId, chatMessage));
     }
 
     @Test
-    void validateGuess_opponentCannotChatOnNormalTile() {
-        ChatMessageDTO chatMessage = new ChatMessageDTO(opponentId, "cachorro");
-
-        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
-
-        assertThrows(IllegalArgumentException.class,
-                () -> chatValidationService.validateGuess(matchId, chatMessage));
-    }
-
-    @Test
-    void validateGuess_opponentCanChatOnSpecialTile() {
+    void processChatMessage_opponentCanChatOnSpecialTile() {
         matchState.setTeamAPosition(11);
         ChatMessageDTO chatMessage = new ChatMessageDTO(opponentId, "cachorro");
 
@@ -173,7 +163,7 @@ class ChatValidationServiceTest {
         when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
                 .thenReturn(createMatchPlayers());
 
-        ChatValidationResultDTO result = chatValidationService.validateGuess(matchId, chatMessage);
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
 
         assertTrue(result.isCorrect());
         assertEquals('B', result.guesserTeam());
@@ -181,27 +171,73 @@ class ChatValidationServiceTest {
     }
 
     @Test
-    void validateGuess_throwsExceptionWhenRoundExpired() {
-        matchState.setRoundExpiresAt(LocalDateTime.now().minusSeconds(10));
-        ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "cachorro");
+    void processChatMessage_freeChatWhenRoundNotActive() {
+        matchState.setRoundExpiresAt(null);
+        ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "oi pessoal");
 
         when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
         when(userRepository.findById(teammateId)).thenReturn(Optional.of(teammate));
+        when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
+                .thenReturn(createMatchPlayers());
 
-        assertThrows(IllegalStateException.class,
-                () -> chatValidationService.validateGuess(matchId, chatMessage));
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
+
+        assertFalse(result.isCorrect());
+        assertEquals("oi pessoal", result.message());
+        assertEquals("Teammate", result.playerName());
+        verify(gameplayService, never()).handleCorrectGuess(any(), any());
     }
 
     @Test
-    void validateGuess_throwsExceptionWhenMatchPaused() {
-        matchState.setIsPaused(true);
-        ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "cachorro");
+    void processChatMessage_freeChatWhenRoundExpired() {
+        matchState.setRoundExpiresAt(LocalDateTime.now().minusSeconds(10));
+        ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "boa jogada");
 
         when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
         when(userRepository.findById(teammateId)).thenReturn(Optional.of(teammate));
+        when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
+                .thenReturn(createMatchPlayers());
 
-        assertThrows(IllegalStateException.class,
-                () -> chatValidationService.validateGuess(matchId, chatMessage));
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
+
+        assertFalse(result.isCorrect());
+        assertEquals("boa jogada", result.message());
+        verify(gameplayService, never()).handleCorrectGuess(any(), any());
+    }
+
+    @Test
+    void processChatMessage_freeChatWhenMatchPaused() {
+        matchState.setIsPaused(true);
+        ChatMessageDTO chatMessage = new ChatMessageDTO(teammateId, "voltou?");
+
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+        when(userRepository.findById(teammateId)).thenReturn(Optional.of(teammate));
+        when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
+                .thenReturn(createMatchPlayers());
+
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
+
+        assertFalse(result.isCorrect());
+        assertEquals("voltou?", result.message());
+        verify(gameplayService, never()).handleCorrectGuess(any(), any());
+    }
+
+    @Test
+    void processChatMessage_anyPlayerCanFreeChatWhenRoundNotActive() {
+        matchState.setRoundExpiresAt(null);
+        ChatMessageDTO chatMessage = new ChatMessageDTO(opponentId, "boa sorte");
+
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+        when(userRepository.findById(opponentId)).thenReturn(Optional.of(opponent));
+        when(matchPlayerRepository.findByMatchIdOrderByPlayerOrder(matchId))
+                .thenReturn(createMatchPlayers());
+
+        ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
+
+        assertFalse(result.isCorrect());
+        assertEquals("boa sorte", result.message());
+        assertEquals("Opponent", result.playerName());
+        assertEquals('B', result.guesserTeam());
     }
 
     @Test
@@ -216,7 +252,7 @@ class ChatValidationServiceTest {
     }
 
     @Test
-    void canPlayerChat_returnsFalseForMimePlayer() {
+    void canPlayerChat_returnsFalseForMimePlayer_duringMimePhase() {
         when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
 
         boolean canChat = chatValidationService.canPlayerChat(matchId, mimePlayerId);
@@ -245,6 +281,20 @@ class ChatValidationServiceTest {
         boolean canChat = chatValidationService.canPlayerChat(matchId, opponentId);
 
         assertTrue(canChat);
+    }
+
+    @Test
+    void canPlayerChat_returnsTrueForAnyPlayerWhenRoundNotActive() {
+        matchState.setRoundExpiresAt(null);
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+
+        boolean canChatMime = chatValidationService.canPlayerChat(matchId, mimePlayerId);
+        boolean canChatTeammate = chatValidationService.canPlayerChat(matchId, teammateId);
+        boolean canChatOpponent = chatValidationService.canPlayerChat(matchId, opponentId);
+
+        assertTrue(canChatMime);
+        assertTrue(canChatTeammate);
+        assertTrue(canChatOpponent);
     }
 
     private List<MatchPlayerEntity> createMatchPlayers() {

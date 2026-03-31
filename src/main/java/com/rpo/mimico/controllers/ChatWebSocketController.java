@@ -17,18 +17,16 @@ import java.util.UUID;
 /*
  * WebSocket controller for handling chat messages during gameplay.
  *
- * Players send guesses via:
- *   /app/match/{matchId}/chat
- *
- * All players receive validation results via:
- *   /topic/match/{matchId}/chat
+ * Players send messages via: /app/match/{matchId}/chat
+ * All players receive messages via: /topic/match/{matchId}/chat
  *
  * Message flow:
- * 1. Player sends guess → /app/match/{matchId}/chat
- * 2. Server validates guess (ChatValidationService)
+ * 1. Player sends message → /app/match/{matchId}/chat
+ * 2. Server processes message (ChatValidationService)
+ *    - If mime phase: validates as guess attempt
+ *    - If other phase: sends as free chat
  * 3. Server broadcasts result → /topic/match/{matchId}/chat
- * 4. If correct: GameplayService handles turn logic
- * 5. All players see the message + validation result
+ * 4. If correct guess: GameplayService handles turn logic
  */
 @Slf4j
 @Controller
@@ -45,13 +43,12 @@ public class ChatWebSocketController {
                 matchId, chatMessage.playerId(), chatMessage.message());
 
         try {
-            ChatValidationResultDTO result = chatValidationService.validateGuess(matchId, chatMessage);
+            ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
 
             messagingTemplate.convertAndSend("/topic/match/" + matchId + "/chat", result);
 
             if (result.isCorrect()) {
                 log.info("Correct guess! match={}, player={}, team={}", matchId, result.playerId(), result.guesserTeam());
-
                 messagingTemplate.convertAndSend("/topic/match/" + matchId + "/correct-guess", result);
             }
 

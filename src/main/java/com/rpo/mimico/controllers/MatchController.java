@@ -1,6 +1,7 @@
 package com.rpo.mimico.controllers;
 
 import com.rpo.mimico.dtos.MatchResponseDTO;
+import com.rpo.mimico.dtos.MatchStateResponseDTO;
 import com.rpo.mimico.dtos.StartMatchRequestDTO;
 import com.rpo.mimico.services.MatchService;
 import com.rpo.mimico.services.ReconnectionService;
@@ -12,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,6 +31,26 @@ public class MatchController {
 
     private final MatchService matchService;
     private final ReconnectionService reconnectionService;
+
+    @Operation(
+            summary = "Get active match by table ID",
+            description = "Retrieves the current state of an active match for reconnection purposes",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Match state retrieved"),
+                    @ApiResponse(responseCode = "204", description = "No active match for this table"),
+                    @ApiResponse(responseCode = "401", description = "Unauthorized")
+            }
+    )
+    @GetMapping("/table/{tableId}")
+    public ResponseEntity<MatchStateResponseDTO> getActiveMatchByTableId(@PathVariable UUID tableId) {
+        MatchStateResponseDTO response = matchService.getActiveMatchByTableId(tableId);
+
+        if (response == null) {
+            return ResponseEntity.noContent().build();
+        }
+
+        return ResponseEntity.ok(response);
+    }
 
     @Operation(
             summary = "Start match",

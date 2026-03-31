@@ -3,12 +3,14 @@ package com.rpo.mimico.services;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rpo.mimico.dtos.DiceRollResponseDTO;
+import com.rpo.mimico.dtos.MatchEndedDTO;
 import com.rpo.mimico.dtos.WordCardResponseDTO;
 import com.rpo.mimico.entities.*;
 import com.rpo.mimico.repositories.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +38,7 @@ public class GameplayService {
     private final GameTableRepository gameTableRepository;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final SimpMessagingTemplate messagingTemplate;
     private final Random random = new Random();
 
     @Transactional
@@ -263,6 +266,18 @@ public class GameplayService {
 
         log.info("Match finished: match={}, winner={}, teamAPos={}, teamBPos={}",
                 match.getId(), winnerTeam, matchState.getTeamAPosition(), matchState.getTeamBPosition());
+
+        MatchEndedDTO matchEndedDTO = MatchEndedDTO.builder()
+                .matchId(match.getId())
+                .tableId(table.getId())
+                .winnerTeam(winnerTeam)
+                .reason("WIN")
+                .build();
+
+        messagingTemplate.convertAndSend(
+                "/topic/table/" + table.getId() + "/match-ended",
+                Map.of("type", "MATCH_ENDED", "data", matchEndedDTO)
+        );
     }
 
     private MatchStateEntity getMatchState(UUID matchId) {

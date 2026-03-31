@@ -32,23 +32,38 @@ public class ChatValidationService {
     private final GameplayService gameplayService;
 
     /*
-     * Validates a chat message (guess) from a player.
+     * Processes a chat message from a player.
+     * Business rules:
+     * - If round is active (mime phase): validates as guess attempt
+     * - If round is inactive (other phases): sends as free chat message
+     */
+    @Transactional
+    public ChatValidationResultDTO processChatMessage(UUID matchId, ChatMessageDTO chatMessage) {
+        MatchStateEntity matchState = getMatchState(matchId);
+
+        boolean isRoundActive = isRoundActive(matchState);
+
+        if (isRoundActive) {
+            return validateGuess(matchId, chatMessage, matchState);
+        } else {
+            return sendFreeChatMessage(matchId, chatMessage);
+        }
+    }
+
+    /*
+     * Validates a guess during mime phase.
      * Business rules:
      * - Player must be allowed to chat based on current tile type
      * - Normal tiles: only mime's teammate can chat
      * - Special tiles: all 4 players can chat
      * - Mime player cannot chat (they're doing the mime!)
-     * - Round must be active (timer not expired)
-     * - Message is compared against current word (normalized)
+     * - Message is compared against current word (normalized, case-insensitive, ignore accents)
      */
     @Transactional
-    public ChatValidationResultDTO validateGuess(UUID matchId, ChatMessageDTO chatMessage) {
-        MatchStateEntity matchState = getMatchState(matchId);
+    public ChatValidationResultDTO validateGuess(UUID matchId, ChatMessageDTO chatMessage, MatchStateEntity matchState) {
         UUID userId = chatMessage.playerId();
         String chatMsg = chatMessage.message();
         UserEntity player = getUser(userId);
-
-        validateRoundActive(matchState);
 
         validateChatPermission(matchState, userId);
 
@@ -59,7 +74,7 @@ public class ChatValidationService {
 
         boolean isCorrect = normalizedGuess.equals(normalizedWord);
 
-        log.info("Chat message validated: match={}, player={}, team={}, message='{}', correct={}",
+        log.info("Guess validated: match={}, player={}, team={}, message='{}', correct={}",
                 matchId, chatMessage.playerId(), playerTeam, chatMessage.message(), isCorrect);
 
         if (isCorrect) {
@@ -76,16 +91,32 @@ public class ChatValidationService {
                 .build();
     }
 
-    /**
-     * Checks if a player is allowed to send chat messages based on:
-     * - Current tile type (normal vs special)
-     * - Player's team vs mime's team
-     * - Player is not the mime
-     */
+    private ChatValidationResultDTO sendFreeChatMessage(UUID matchId, ChatMessageDTO chatMessage) {
+        UUID userId = chatMessage.playerId();
+        UserEntity player = getUser(userId);
+        Character playerTeam = getPlayerTeam(matchId, userId);
+
+        log.info("Free chat message: match={}, player={}, team={}, message='{}'",
+                matchId, userId, playerTeam, chatMessage.message());
+
+        return ChatValidationResultDTO.builder()
+                .playerId(chatMessage.playerId())
+                .playerName(player.getNickname())
+                .message(chatMessage.message())
+                .isCorrect(false)
+                .matchId(matchId)
+                .guesserTeam(playerTeam)
+                .build();
+    }
+
     public boolean canPlayerChat(UUID matchId, UUID playerId) {
         try {
             MatchStateEntity matchState = getMatchState(matchId);
-            validateRoundActive(matchState);
+
+            if (!isRoundActive(matchState)) {
+                return true;
+            }
+
             validateChatPermission(matchState, playerId);
             return true;
         } catch (IllegalStateException | IllegalArgumentException e) {
@@ -93,22 +124,24 @@ public class ChatValidationService {
         }
     }
 
-    private void validateRoundActive(MatchStateEntity matchState) {
+    private boolean isRoundActive(MatchStateEntity matchState) {
         if (matchState.getRoundExpiresAt() == null) {
-            throw new IllegalStateException("No active round - cannot send chat messages");
+            return false;
         }
 
         if (LocalDateTime.now().isAfter(matchState.getRoundExpiresAt())) {
-            throw new IllegalStateException("Round has expired - cannot send chat messages");
+            return false;
         }
 
         if (matchState.getIsPaused()) {
-            throw new IllegalStateException("Match is paused - cannot send chat messages");
+            return false;
         }
+
+        return true;
     }
 
     /*
-     * Validates that the player is allowed to chat based on game rules.
+     * Validates that the player is allowed to chat during mime phase.
      * Rules:
      * - Mime player cannot chat
      * - Normal tiles: only mime's teammate can chat
@@ -117,7 +150,6 @@ public class ChatValidationService {
     private void validateChatPermission(MatchStateEntity matchState, UUID playerId) {
         UUID mimePlayerId = matchState.getCurrentMimePlayer().getId();
 
-        // Mime cannot chat (they're doing the mime!)
         if (playerId.equals(mimePlayerId)) {
             throw new IllegalArgumentException("Mime player cannot send chat messages");
         }
@@ -128,13 +160,8 @@ public class ChatValidationService {
 
         boolean isSpecialTile = SPECIAL_TILES.contains(currentPosition);
 
-        if (isSpecialTile) {
-            log.debug("Special tile - all players can chat: position={}", currentPosition);
-        } else {
-            if (!playerTeam.equals(mimeTeam)) {
-                throw new IllegalArgumentException("Only mime's teammate can chat on normal tiles");
-            }
-            log.debug("Normal tile - only teammate can chat: position={}, mimeTeam={}", currentPosition, mimeTeam);
+        if (!isSpecialTile && !playerTeam.equals(mimeTeam)) {
+            throw new IllegalArgumentException("Only mime's teammate can chat on normal tiles");
         }
     }
 
@@ -164,50 +191,3 @@ public class ChatValidationService {
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
