@@ -29,7 +29,7 @@ public class MatchStateEntity {
     @Column(name = "team_b_position", nullable = false)
     private Integer teamBPosition;
 
-    @Column(name = "current_team", nullable = false, length = 1)
+    @Column(name = "current_team", length = 1)
     private Character currentTeam;
 
     @ManyToOne(fetch = FetchType.LAZY)

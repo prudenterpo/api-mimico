@@ -2,6 +2,7 @@ package com.rpo.mimico.services;
 
 import com.rpo.mimico.dtos.MatchEndedDTO;
 import com.rpo.mimico.dtos.MatchResponseDTO;
+import com.rpo.mimico.dtos.MatchStateResponseDTO;
 import com.rpo.mimico.dtos.StartMatchRequestDTO;
 import com.rpo.mimico.entities.GameTableEntity;
 import com.rpo.mimico.entities.MatchEntity;
@@ -20,7 +21,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -28,13 +29,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MatchService {
 
+    private static final Set<Integer> SPECIAL_TILES = Set.of(5, 11, 17, 23, 29, 35, 40, 44, 48, 51);
+
     private final MatchRepository matchRepository;
     private final MatchPlayerRepository matchPlayerRepository;
     private final MatchStateRepository matchStateRepository;
     private final GameTableRepository gameTableRepository;
     private final UserRepository userRepository;
-
-    private final Random random = new Random();
 
     @Transactional
     public MatchResponseDTO startMatch(StartMatchRequestDTO request) {
@@ -73,18 +74,10 @@ public class MatchService {
             matchPlayerRepository.save(matchPlayer);
         }
 
-        Character startingTeam = random.nextBoolean() ? 'A' : 'B';
-
-        List<MatchPlayerEntity> startingTeamPlayers = matchPlayerRepository
-                .findByMatchIdAndTeam(match.getId(), startingTeam);
-        UserEntity firstMimePlayer = startingTeamPlayers.get(0).getUser();
-
         MatchStateEntity matchState = MatchStateEntity.builder()
                 .match(match)
                 .teamAPosition(0)
                 .teamBPosition(0)
-                .currentTeam(startingTeam)
-                .currentMimePlayer(firstMimePlayer)
                 .isPaused(false)
                 .build();
         matchStateRepository.save(matchState);
@@ -92,17 +85,88 @@ public class MatchService {
         table.setStatus(GameTableEntity.TableStatus.IN_PROGRESS);
         gameTableRepository.save(table);
 
-        log.info("Match started: id={}, tableId={}, startingTeam={}", match.getId(), table.getId(), startingTeam);
+        log.info("Match started (sorteio pending): id={}, tableId={}", match.getId(), table.getId());
 
         return MatchResponseDTO.builder()
                 .matchId(match.getId())
                 .tableId(table.getId())
-                .startingTeam(startingTeam)
-                .currentMimePlayerId(firstMimePlayer.getId())
                 .teamAPosition(0)
                 .teamBPosition(0)
                 .startedAt(match.getStartedAt())
                 .build();
+    }
+
+    /*
+     * Retrieves the current state of an active match for a given table.
+     * Used for reconnection after page reload.
+     * Returns null if no active match exists for the table.
+     */
+    @Transactional
+    public MatchStateResponseDTO getActiveMatchByTableId(UUID tableId) {
+        MatchEntity match = matchRepository.findByTableIdAndFinishedAtIsNull(tableId)
+                .orElse(null);
+
+        if (match == null) {
+            return null;
+        }
+
+        MatchStateEntity state = matchStateRepository.findByMatchId(match.getId())
+                .orElseThrow(() -> new IllegalStateException("Match state not found for match: " + match.getId()));
+
+        List<MatchPlayerEntity> matchPlayers = matchPlayerRepository.findByMatchIdOrderByPlayerOrder(match.getId());
+
+        List<MatchStateResponseDTO.PlayerDTO> players = matchPlayers.stream()
+                .map(mp -> MatchStateResponseDTO.PlayerDTO.builder()
+                        .userId(mp.getUser().getId())
+                        .nickname(mp.getUser().getNickname())
+                        .team(mp.getTeam())
+                        .playerOrder(mp.getPlayerOrder())
+                        .build())
+                .toList();
+
+        int currentPosition = state.getCurrentTeam() != null && state.getCurrentTeam() == 'A'
+                ? state.getTeamAPosition()
+                : state.getTeamBPosition();
+
+        String gamePhase = determineGamePhase(state);
+
+        return MatchStateResponseDTO.builder()
+                .matchId(match.getId())
+                .tableId(tableId)
+                .players(players)
+                .teamAPosition(state.getTeamAPosition())
+                .teamBPosition(state.getTeamBPosition())
+                .currentTurn(state.getCurrentTeam())
+                .currentMimePlayerId(state.getCurrentMimePlayer() != null ? state.getCurrentMimePlayer().getId() : null)
+                .gamePhase(gamePhase)
+                .timerEndsAt(state.getRoundExpiresAt())
+                .isSpecialTile(SPECIAL_TILES.contains(currentPosition))
+                .isPaused(state.getIsPaused())
+                .build();
+    }
+
+    /*
+     * Determines the current game phase based on match state.
+     * Phases: dice, word-selection, mime, finished
+     */
+    private String determineGamePhase(MatchStateEntity state) {
+        if (state.getCurrentTeam() == null) {
+            return "sorteio";
+        }
+
+        if (state.getIsPaused()) {
+            return "paused";
+        }
+
+        if (state.getRoundExpiresAt() != null && LocalDateTime.now().isBefore(state.getRoundExpiresAt())) {
+            return "mime";
+        }
+
+        if (state.getCurrentWord() != null && state.getRoundExpiresAt() == null) {
+            return "word-selection";
+        }
+
+        return "dice";
     }
 
     @Transactional
