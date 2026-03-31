@@ -1,8 +1,11 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.dtos.MatchEndedDTO;
+import com.rpo.mimico.entities.GameTableEntity;
 import com.rpo.mimico.entities.MatchEntity;
 import com.rpo.mimico.entities.MatchPlayerEntity;
 import com.rpo.mimico.entities.MatchStateEntity;
+import com.rpo.mimico.repositories.GameTableRepository;
 import com.rpo.mimico.repositories.MatchPlayerRepository;
 import com.rpo.mimico.repositories.MatchRepository;
 import com.rpo.mimico.repositories.MatchStateRepository;
@@ -34,11 +37,13 @@ import java.util.concurrent.TimeUnit;
 public class ReconnectionService {
 
     private static final String RECONNECTION_KEY_TEMPLATE = "reconnection:%s:%s";
-    private static final long RECONNECTION_TIMEOUT_SECONDS = 3600; // 1 hour
+    public static final long RECONNECTION_TIMEOUT_SECONDS = 60;
+    private static final long RECONNECTION_KEY_TTL_SECONDS = 90; // timeout + buffer for cleanup
 
     private final MatchStateRepository matchStateRepository;
     private final MatchRepository matchRepository;
     private final MatchPlayerRepository matchPlayerRepository;
+    private final GameTableRepository gameTableRepository;
     private final StringRedisTemplate redisTemplate;
     private final SimpMessagingTemplate messagingTemplate;
 
@@ -75,11 +80,11 @@ public class ReconnectionService {
         redisTemplate.opsForValue().set(
                 reconnectionKey,
                 LocalDateTime.now().toString(),
-                RECONNECTION_TIMEOUT_SECONDS,
+                RECONNECTION_KEY_TTL_SECONDS,
                 TimeUnit.SECONDS
         );
 
-        log.info("Match paused due to disconnect: matchId={}, userId={}, gracePeriod=1h", matchId, userId);
+        log.info("Match paused due to disconnect: matchId={}, userId={}, gracePeriod={}s", matchId, userId, RECONNECTION_TIMEOUT_SECONDS);
 
         broadcastMatchPaused(matchId, userId, matchPlayer.getUser().getNickname());
     }
@@ -124,21 +129,40 @@ public class ReconnectionService {
         MatchStateEntity matchState = matchStateRepository.findByMatchId(matchId)
                 .orElseThrow(() -> new IllegalArgumentException("Match state not found: " + matchId));
 
+        MatchEntity match = matchState.getMatch();
+        if (match.getFinishedAt() != null) {
+            log.debug("Match {} already finished, skipping forfeit", matchId);
+            redisTemplate.delete(buildReconnectionKey(matchId, disconnectedUserId));
+            return;
+        }
+
         Character disconnectedTeam = getPlayerTeam(matchId, disconnectedUserId);
         Character winnerTeam = disconnectedTeam == 'A' ? 'B' : 'A';
 
-        MatchEntity match = matchState.getMatch();
         match.setWinnerTeam(winnerTeam);
         match.setFinishedAt(LocalDateTime.now());
         matchRepository.save(match);
 
-        String reconnectionKey = buildReconnectionKey(matchId, disconnectedUserId);
-        redisTemplate.delete(reconnectionKey);
+        GameTableEntity table = match.getTable();
+        table.setStatus(GameTableEntity.TableStatus.FINISHED);
+        gameTableRepository.save(table);
+
+        redisTemplate.delete(buildReconnectionKey(matchId, disconnectedUserId));
 
         log.info("Match forfeited: matchId={}, disconnectedUser={}, winnerTeam={}",
                 matchId, disconnectedUserId, winnerTeam);
 
-        broadcastMatchEnded(matchId, winnerTeam);
+        MatchEndedDTO matchEndedDTO = MatchEndedDTO.builder()
+                .matchId(match.getId())
+                .tableId(table.getId())
+                .winnerTeam(winnerTeam)
+                .reason("FORFEIT")
+                .build();
+
+        messagingTemplate.convertAndSend(
+                "/topic/table/" + table.getId() + "/match-ended",
+                Map.of("type", "MATCH_ENDED", "data", matchEndedDTO)
+        );
     }
 
     public boolean hasPendingReconnection(UUID matchId) {
@@ -188,7 +212,7 @@ public class ReconnectionService {
                         "type", "MATCH_PAUSED",
                         "disconnectedUserId", disconnectedUserId.toString(),
                         "disconnectedUserNickname", disconnectedUserNickname,
-                        "message", disconnectedUserNickname + " disconnected. Match paused for 1 hour.",
+                        "message", disconnectedUserNickname + " disconnected. Waiting " + RECONNECTION_TIMEOUT_SECONDS + "s for reconnection.",
                         "gracePeriodSeconds", RECONNECTION_TIMEOUT_SECONDS
                 )
         );
@@ -202,18 +226,6 @@ public class ReconnectionService {
                         "reconnectedUserId", reconnectedUserId.toString(),
                         "reconnectedUserNickname", reconnectedUserNickname,
                         "message", reconnectedUserNickname + " reconnected. Match resumed."
-                )
-        );
-    }
-
-    private void broadcastMatchEnded(UUID matchId, Character winnerTeam) {
-        messagingTemplate.convertAndSend(
-                "/topic/match/" + matchId + "/ended",
-                Map.of(
-                        "type", "MATCH_ENDED",
-                        "winnerTeam", winnerTeam,
-                        "reason","forfeit",
-                        "message", "Match ended. TeamEntity " + winnerTeam + " wins by forfeit."
                 )
         );
     }

@@ -6,18 +6,17 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Scheduled service to handle reconnection timeouts.
+ * Scheduled service to auto-forfeit matches when reconnection timeout expires.
  *
- * Runs every 5 minutes to check for expired reconnections.
- * Redis keys have 1-hour TTL, so expired keys are automatically cleaned.
- * This service just provides additional forfeit logic if needed.
- *
- * Note: Most cleanup is automatic via Redis TTL.
- * This service is mainly for logging and ensuring consistent state.
+ * Runs every 5 seconds to check for reconnection keys older than RECONNECTION_TIMEOUT_SECONDS.
+ * When a player's disconnect time exceeds the timeout, the match is forfeited in favor of
+ * the opponent team.
  */
 @Slf4j
 @Service
@@ -27,69 +26,45 @@ public class ReconnectionTimeoutService {
     private final StringRedisTemplate redisTemplate;
     private final ReconnectionService reconnectionService;
 
-    /**
-     * Checks for expired reconnections every 5 minutes.
-     *
-     * Redis automatically expires keys after 1 hour (TTL).
-     * This task provides additional monitoring and logging.
-     *
-     * If a reconnection key exists beyond expected time, it means:
-     * - Player never reconnected
-     * - Host never manually ended the match
-     * - System should auto-forfeit
-     */
-    @Scheduled(fixedRate = 300000) // 5 minutes
+    @Scheduled(fixedRate = 5000)
     public void checkExpiredReconnections() {
-        try {
-            Set<String> keys = redisTemplate.keys("reconnection:*");
-
-            if (keys == null || keys.isEmpty()) {
-                return;
-            }
-
-            log.debug("Found {} pending reconnections to monitor", keys.size());
-
-            for (String key : keys) {
-                String[] parts = key.split(":");
-                if (parts.length != 3) {
-                    log.warn("Invalid reconnection key format: {}", key);
-                    continue;
-                }
-
-                UUID matchId = UUID.fromString(parts[1]);
-                UUID userId = UUID.fromString(parts[2]);
-
-                Long ttl = redisTemplate.getExpire(key);
-
-                if (ttl != null && ttl > 0 && ttl < 60) {
-                    log.info("Reconnection expiring soon: matchId={}, userId={}, ttl={}s",
-                            matchId, userId, ttl);
-                }
-            }
-
-        } catch (Exception e) {
-            log.error("Error checking expired reconnections", e);
-        }
-    }
-
-    public int cleanupStaleReconnections() {
         Set<String> keys = redisTemplate.keys("reconnection:*");
 
         if (keys == null || keys.isEmpty()) {
-            return 0;
+            return;
         }
 
-        int cleaned = 0;
-        for (String key : keys) {
-            Long ttl = redisTemplate.getExpire(key);
+        LocalDateTime now = LocalDateTime.now();
 
-            if (ttl != null && ttl <= 0) {
+        for (String key : keys) {
+            String[] parts = key.split(":");
+            if (parts.length != 3) {
+                log.warn("Invalid reconnection key format: {}", key);
+                continue;
+            }
+
+            String value = redisTemplate.opsForValue().get(key);
+            if (value == null) {
+                continue; // already expired and cleaned by Redis TTL
+            }
+
+            try {
+                LocalDateTime disconnectTime = LocalDateTime.parse(value);
+                long elapsedSeconds = Duration.between(disconnectTime, now).getSeconds();
+
+                if (elapsedSeconds >= ReconnectionService.RECONNECTION_TIMEOUT_SECONDS) {
+                    UUID matchId = UUID.fromString(parts[1]);
+                    UUID userId = UUID.fromString(parts[2]);
+
+                    log.info("Reconnection timeout expired: matchId={}, userId={}, elapsedSeconds={}",
+                            matchId, userId, elapsedSeconds);
+
+                    reconnectionService.forfeitMatch(matchId, userId);
+                }
+            } catch (Exception e) {
+                log.error("Failed to process reconnection key {}: {}", key, e.getMessage());
                 redisTemplate.delete(key);
-                cleaned++;
             }
         }
-
-        log.info("Manual cleanup completed: {} stale reconnections removed", cleaned);
-        return cleaned;
     }
 }
