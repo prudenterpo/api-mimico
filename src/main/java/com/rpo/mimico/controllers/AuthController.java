@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping("/api/auth")
 @RequiredArgsConstructor
 @Tag(name = "Authentication", description = "Handles user login")
 public class AuthController {
@@ -60,16 +60,16 @@ public class AuthController {
             summary = "User logout",
             description = "Invalidates the current user session by removing it from Redis.",
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Logout successful"),
+                    @ApiResponse(responseCode = "204", description = "Logout successful"),
                     @ApiResponse(responseCode = "401", description = "Not authenticated")
             }
     )
     @PostMapping("/logout")
-    public ResponseEntity<String> logout(Authentication authentication) {
+    public ResponseEntity<Void> logout(Authentication authentication) {
         UUID userId = UUID.fromString(authentication.getName());
         authService.logout(userId);
 
-        return ResponseEntity.ok("Logout successful");
+        return ResponseEntity.noContent().build();
     }
 
     @Operation(
@@ -89,4 +89,3 @@ public class AuthController {
         return ResponseEntity.ok(userProfile);
     }
 }
-

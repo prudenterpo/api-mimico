@@ -11,7 +11,6 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -32,11 +31,9 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 
         Map<String, Object> errorDetails = new HashMap<>();
-        errorDetails.put("timestamp", LocalDateTime.now().toString());
-        errorDetails.put("status", HttpServletResponse.SC_UNAUTHORIZED);
-        errorDetails.put("error", "Unauthorized");
+        errorDetails.put("code", "AUTHENTICATION_REQUIRED");
         errorDetails.put("message", "Authentication required to access this resource");
-        errorDetails.put("path", request.getRequestURI());
+        errorDetails.put("details", Map.of("path", request.getRequestURI()));
 
         response.getOutputStream().println(objectMapper.writeValueAsString(errorDetails));
     }

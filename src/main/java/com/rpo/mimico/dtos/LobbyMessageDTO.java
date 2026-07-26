@@ -4,8 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record LobbyMessageDTO(
-        @NotBlank String userId,
-        @NotBlank String userName,
-        @NotBlank @Size(max = 500) String message,
-        String timestamp
+        @NotBlank(message = "Lobby message is required")
+        @Size(max = 500, message = "Lobby message must be at most 500 characters")
+        String message
 ) {}

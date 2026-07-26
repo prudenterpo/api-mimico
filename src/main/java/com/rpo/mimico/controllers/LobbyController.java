@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/lobby")
+@RequestMapping("/api/lobby")
 @RequiredArgsConstructor
 @Tag(name = "Lobby", description = "Lobby operations - view online users")
 @SecurityRequirement(name = "bearer-jwt")
@@ -32,7 +32,7 @@ public class LobbyController {
     @GetMapping("/online-users")
     public ResponseEntity<OnlineUsersResponseDTO> getOnlineUsers() {
         OnlineUsersResponseDTO response = OnlineUsersResponseDTO.builder()
-                .users(onlineUsersService.getOnlineUsers())
+                .users(onlineUsersService.getOnlineUserProfiles())
                 .count(onlineUsersService.getOnlineCount())
                 .build();
 
