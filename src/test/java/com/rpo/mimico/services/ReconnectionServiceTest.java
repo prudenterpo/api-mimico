@@ -1,9 +1,11 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.entities.GameTableEntity;
 import com.rpo.mimico.entities.MatchEntity;
 import com.rpo.mimico.entities.MatchPlayerEntity;
 import com.rpo.mimico.entities.MatchStateEntity;
 import com.rpo.mimico.entities.UserEntity;
+import com.rpo.mimico.repositories.GameTableRepository;
 import com.rpo.mimico.repositories.MatchPlayerRepository;
 import com.rpo.mimico.repositories.MatchRepository;
 import com.rpo.mimico.repositories.MatchStateRepository;
@@ -21,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -45,6 +48,8 @@ public class ReconnectionServiceTest {
     @Mock
     private MatchPlayerRepository matchPlayerRepository;
     @Mock
+    private GameTableRepository gameTableRepository;
+    @Mock
     private StringRedisTemplate redisTemplate;
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -58,6 +63,7 @@ public class ReconnectionServiceTest {
     private UUID userId;
     private MatchStateEntity matchState;
     private MatchEntity match;
+    private GameTableEntity table;
     private UserEntity user;
     private MatchPlayerEntity matchPlayer;
 
@@ -70,8 +76,13 @@ public class ReconnectionServiceTest {
         user.setId(userId);
         user.setNickname("Test PlayerEntity");
 
+        table = new GameTableEntity();
+        table.setId(UUID.randomUUID());
+        table.setStatus(GameTableEntity.TableStatus.IN_PROGRESS);
+
         match = new MatchEntity();
         match.setId(matchId);
+        match.setTable(table);
         match.setFinishedAt(null);
 
         matchState = new MatchStateEntity();
@@ -101,8 +112,8 @@ public class ReconnectionServiceTest {
         verify(valueOperations).set(
                 eq("reconnection:" + matchId + ":" + userId),
                 anyString(),
-                eq(3600L),
-                any()
+                eq(90L),
+                eq(TimeUnit.SECONDS)
         );
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/match/" + matchId + "/paused"),
@@ -198,9 +209,10 @@ public class ReconnectionServiceTest {
         assertEquals('B', match.getWinnerTeam());
         assertNotNull(match.getFinishedAt());
         verify(matchRepository).save(match);
+        verify(gameTableRepository).save(table);
         verify(redisTemplate).delete("reconnection:" + matchId + ":" + userId);
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/match/" + matchId + "/ended"),
+                eq("/topic/table/" + table.getId() + "/match-ended"),
                 any(Object.class)
         );
     }
@@ -274,9 +286,6 @@ public class ReconnectionServiceTest {
         return List.of(mp1, mp2, mp3, mp4);
     }
 }
-
-
-
 
 
 
