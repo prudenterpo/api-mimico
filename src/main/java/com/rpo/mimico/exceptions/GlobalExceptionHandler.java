@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,11 +25,9 @@ public class GlobalExceptionHandler {
         log.warn("Invalid credentials attempt: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.UNAUTHORIZED.value())
-                .error("Unauthorized")
+                .code("INVALID_CREDENTIALS")
                 .message(ex.getMessage())
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponseDTO);
@@ -41,11 +38,9 @@ public class GlobalExceptionHandler {
         log.error("Token validation error: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.UNAUTHORIZED.value())
-                .error("Unauthorized")
+                .code("INVALID_TOKEN")
                 .message(ex.getMessage())
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(errorResponseDTO);
@@ -56,11 +51,9 @@ public class GlobalExceptionHandler {
         log.warn("Access denied: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.FORBIDDEN.value())
-                .error("Forbidden")
+                .code("ACCESS_DENIED")
                 .message("You don't have permission to access this resource")
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponseDTO);
@@ -79,12 +72,12 @@ public class GlobalExceptionHandler {
         log.warn("Validation error: {}", fieldErrors);
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Validation Failed")
+                .code("VALIDATION_FAILED")
                 .message("Invalid request parameters")
-                .path(request.getDescription(false).replace("uri=", ""))
-                .validationErrors(fieldErrors)
+                .details(Map.of(
+                        "path", path(request),
+                        "fields", fieldErrors
+                ))
                 .build();
 
         return ResponseEntity.badRequest().body(errorResponseDTO);
@@ -95,11 +88,9 @@ public class GlobalExceptionHandler {
         log.warn("Duplicate resource error: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.CONFLICT.value())
-                .error("Conflict")
+                .code(duplicateCode(ex))
                 .message(ex.getMessage())
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.status(HttpStatus.CONFLICT).body(errorResponseDTO);
@@ -110,11 +101,9 @@ public class GlobalExceptionHandler {
         log.error("Role configuration error: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                .error("Internal Server Error")
+                .code("ROLE_CONFIGURATION_MISSING")
                 .message("System configuration error. Please contact support")
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponseDTO);
@@ -125,11 +114,9 @@ public class GlobalExceptionHandler {
         log.warn("Invalid argument: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
+                .code("REQUEST_INVALID")
                 .message(ex.getMessage())
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.badRequest().body(errorResponseDTO);
@@ -140,11 +127,9 @@ public class GlobalExceptionHandler {
         log.warn("Invalid state: {}", ex.getMessage());
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
+                .code("INVALID_STATE")
                 .message(ex.getMessage())
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.badRequest().body(errorResponseDTO);
@@ -155,11 +140,9 @@ public class GlobalExceptionHandler {
         log.error("Unexpected error occurred: ", ex);
 
         ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                .error("Internal Server Error")
+                .code("INTERNAL_ERROR")
                 .message("An unexpected error occurred. Please try again later")
-                .path(request.getDescription(false).replace("uri=", ""))
+                .details(pathDetails(request))
                 .build();
 
         return ResponseEntity.internalServerError().body(errorResponseDTO);
@@ -169,38 +152,50 @@ public class GlobalExceptionHandler {
      * Handles exceptions thrown in WebSocket message handlers.
      */
     @MessageExceptionHandler(IllegalArgumentException.class)
-    @SendToUser("/queue/errors")
+    @SendToUser("/queue/error")
     public ErrorResponseDTO handleWebSocketIllegalArgument(IllegalArgumentException ex) {
         log.warn("WebSocket invalid argument: {}", ex.getMessage());
         return ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
+                .code("REQUEST_INVALID")
                 .message(ex.getMessage())
                 .build();
     }
 
     @MessageExceptionHandler(IllegalStateException.class)
-    @SendToUser("/queue/errors")
+    @SendToUser("/queue/error")
     public ErrorResponseDTO handleWebSocketIllegalState(IllegalStateException ex) {
         log.warn("WebSocket invalid state: {}", ex.getMessage());
         return ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
+                .code("INVALID_STATE")
                 .message(ex.getMessage())
                 .build();
     }
 
     @MessageExceptionHandler(Exception.class)
-    @SendToUser("/queue/errors")
+    @SendToUser("/queue/error")
     public ErrorResponseDTO handleWebSocketGenericException(Exception ex) {
         log.error("Unhandled WebSocket exception: {}", ex.getMessage(), ex);
         return ErrorResponseDTO.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                .error("Internal Server Error")
+                .code("INTERNAL_ERROR")
                 .message("An unexpected error occurred")
                 .build();
+    }
+
+    private Map<String, Object> pathDetails(WebRequest request) {
+        return Map.of("path", path(request));
+    }
+
+    private String path(WebRequest request) {
+        return request.getDescription(false).replace("uri=", "");
+    }
+
+    private String duplicateCode(AuthenticationException ex) {
+        if (ex instanceof EmailAlreadyExistsException) {
+            return "EMAIL_ALREADY_EXISTS";
+        }
+        if (ex instanceof NicknameAlreadyExistsException) {
+            return "NICKNAME_ALREADY_EXISTS";
+        }
+        return "RESOURCE_ALREADY_EXISTS";
     }
 }

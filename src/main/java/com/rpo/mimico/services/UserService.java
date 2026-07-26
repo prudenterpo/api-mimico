@@ -72,8 +72,7 @@ public class UserService {
         return new RegisterResponseDTO(
                 user.getId().toString(),
                 reguest.email(),
-                user.getNickname(),
-                "User registered successfully"
+                user.getNickname()
         );
     }
 

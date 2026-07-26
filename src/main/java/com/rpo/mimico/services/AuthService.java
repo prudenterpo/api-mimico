@@ -4,6 +4,7 @@ import com.rpo.mimico.entities.RolesEntity;
 import com.rpo.mimico.securities.JwtProperties;
 import com.rpo.mimico.dtos.LoginRequestDTO;
 import com.rpo.mimico.dtos.LoginResponseDTO;
+import com.rpo.mimico.dtos.UserProfileDTO;
 import com.rpo.mimico.entities.AuthCredentialsEntity;
 import com.rpo.mimico.entities.UserEntity;
 import com.rpo.mimico.exceptions.InvalidCredentialsException;
@@ -16,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -30,6 +32,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final StringRedisTemplate redisTemplate;
     private final JwtProperties jwtProperties;
+    private final OnlineUsersService onlineUsersService;
 
     public LoginResponseDTO login(LoginRequestDTO request) {
         AuthCredentialsEntity credentials = authCredentialsRepository.findByEmail(request.email())
@@ -54,7 +57,16 @@ public class AuthService {
 
         UserEntity user = credentials.getUser();
 
-        return new LoginResponseDTO(token, user.getId().toString(), user.getNickname());
+        UserProfileDTO profile = new UserProfileDTO(
+                user.getId().toString(),
+                credentials.getEmail(),
+                user.getNickname(),
+                user.getAvatarUrl(),
+                Set.copyOf(roles),
+                user.getCreatedAt()
+        );
+
+        return new LoginResponseDTO(token, profile);
     }
 
     public void logout(UUID userId) {
@@ -62,6 +74,7 @@ public class AuthService {
 
         String redisKey = SESSION + userId;
         Boolean deleted = redisTemplate.delete(redisKey);
+        onlineUsersService.removeUser(userId);
 
         if (Boolean.TRUE.equals(deleted)) {
             log.info("Session deleted successfully for userId: {}", userId);

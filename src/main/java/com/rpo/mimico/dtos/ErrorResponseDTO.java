@@ -6,7 +6,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
 import java.util.Map;
 
 @Data
@@ -16,15 +15,13 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ErrorResponseDTO {
 
-    private LocalDateTime timestamp;
-    private int status;
-    private String error;
+    private String code;
     private String message;
-    private String path;
-    private Map<String, String> validationErrors;
+    private Map<String, Object> details;
+    private String correlationId;
 
     public ErrorResponseDTO(String message) {
+        this.code = "REQUEST_INVALID";
         this.message = message;
-        this.timestamp = LocalDateTime.now();
     }
 }

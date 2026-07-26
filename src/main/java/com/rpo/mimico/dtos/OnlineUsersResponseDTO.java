@@ -2,10 +2,10 @@ package com.rpo.mimico.dtos;
 
 import lombok.Builder;
 
-import java.util.Set;
+import java.util.List;
 
 @Builder
 public record OnlineUsersResponseDTO(
-        Set<String> users,
+        List<UserProfileDTO> users,
         Long count
 ) {}
