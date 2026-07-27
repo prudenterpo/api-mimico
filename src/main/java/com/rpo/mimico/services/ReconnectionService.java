@@ -144,7 +144,7 @@ public class ReconnectionService {
         matchRepository.save(match);
 
         GameTableEntity table = match.getTable();
-        table.setStatus(GameTableEntity.TableStatus.FINISHED);
+        table.setStatus(GameTableEntity.TableStatus.TABLE_BETWEEN_MATCHES);
         gameTableRepository.save(table);
 
         redisTemplate.delete(buildReconnectionKey(matchId, disconnectedUserId));

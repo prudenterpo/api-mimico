@@ -1,20 +1,21 @@
 package com.rpo.mimico.controllers;
 
+import com.rpo.mimico.dtos.AssignTeamsRequestDTO;
+import com.rpo.mimico.dtos.InviteDecisionRequestDTO;
 import com.rpo.mimico.dtos.InvitePlayerRequestDTO;
-import com.rpo.mimico.dtos.InviteResponseDTO;
-import com.rpo.mimico.services.InviteService;
+import com.rpo.mimico.dtos.LeaveTableRequestDTO;
+import com.rpo.mimico.dtos.StartMatchRequestDTO;
+import com.rpo.mimico.dtos.TableMessageDTO;
 import com.rpo.mimico.services.OnlineUsersService;
 import com.rpo.mimico.services.TablePlayerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.security.Principal;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -22,125 +23,63 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TableWebSocketController {
 
-    private final InviteService inviteService;
     private final OnlineUsersService onlineUsersService;
     private final TablePlayerService tablePlayerService;
-    private final SimpMessagingTemplate messagingTemplate;
 
     @MessageMapping("/table/invite")
     public void sendInvite(@Payload InvitePlayerRequestDTO request, Principal principal) {
+        requirePrincipal(principal);
         UUID hostUserId = UUID.fromString(principal.getName());
         UUID invitedUserId = request.invitedUserId();
-        UUID tableId = request.tableId();
-
         if (!onlineUsersService.isUserOnline(invitedUserId)) {
-            sendErrorToUser(hostUserId, "User is not online");
-            return;
+            throw new IllegalArgumentException("Invited user is offline");
         }
-
-        inviteService.createInvite(tableId, invitedUserId, hostUserId);
-
-        tablePlayerService.addInvitedPlayer(tableId, invitedUserId);
-
-        InviteResponseDTO inviteData = InviteResponseDTO.builder()
-                .tableId(tableId)
-                .tableName(request.tableName())
-                .hostId(hostUserId)
-                .invitedUserId(invitedUserId)
-                .expiresIn(60)
-                .build();
-
-        messagingTemplate.convertAndSendToUser(
-                invitedUserId.toString(),
-                "/queue/invite",
-                Map.of(
-                    "type", "GAME_INVITE",
-                    "data", inviteData
-                )
-        );
-
-        log.info("Invite sent: table={}, host={}, invited={}", tableId, hostUserId, invitedUserId);
+        tablePlayerService.sendInvite(request.tableId(), hostUserId, invitedUserId);
     }
 
     @MessageMapping("/table/invite/accept")
-    public void acceptInvite(@Payload Map<String, String> payload, Principal principal) {
-        UUID userId = UUID.fromString(principal.getName());
-        UUID tableId = UUID.fromString(payload.get("tableId"));
-
-        if (!inviteService.inviteExists(tableId, userId)) {
-            sendErrorToUser(userId, "Invite not found or expired");
-            return;
-        }
-
-        inviteService.removeInvite(tableId, userId);
-
-        try {
-            tablePlayerService.addAcceptedPlayer(tableId, userId);
-            log.info("Invite accepted: table={}, user={}", tableId, userId);
-
-        } catch (Exception e) {
-            log.error("Error accepting invite: table={}, user={}, error={}", tableId, userId, e.getMessage(), e);
-            sendErrorToUser(userId, "Failed to accept invite: " + e.getMessage());
-        }
+    public void acceptInvite(@Payload InviteDecisionRequestDTO request, Principal principal) {
+        requirePrincipal(principal);
+        tablePlayerService.acceptInvite(request.tableId(), request.inviteId(), UUID.fromString(principal.getName()));
     }
 
     @MessageMapping("/table/invite/reject")
-    public void rejectInvite(@Payload Map<String, String> payload, Principal principal) {
-        UUID userId = UUID.fromString(principal.getName());
-        UUID tableId = UUID.fromString(payload.get("tableId"));
-
-        inviteService.removeInvite(tableId, userId);
-
-        tablePlayerService.addRejectedPlayer(tableId, userId);
-
-        log.info("Invite rejected: table={}, user={}", tableId, userId);
+    public void rejectInvite(@Payload InviteDecisionRequestDTO request, Principal principal) {
+        requirePrincipal(principal);
+        tablePlayerService.rejectInvite(request.tableId(), request.inviteId(), UUID.fromString(principal.getName()));
     }
 
-    @MessageMapping("/table/ready")
-    public void togglePlayerReady(@Payload Map<String, Object> payload, Principal principal) {
-        UUID userId = UUID.fromString(principal.getName());
-        UUID tableId = UUID.fromString((String) payload.get("tableId"));
-        boolean ready = (Boolean) payload.get("ready");
+    @MessageMapping("/table/{tableId}/chat")
+    public void sendTableChat(
+            @DestinationVariable UUID tableId,
+            @Payload TableMessageDTO request,
+            Principal principal
+    ) {
+        requirePrincipal(principal);
+        tablePlayerService.postTableMessage(tableId, UUID.fromString(principal.getName()), request.message());
+    }
 
-        log.info("Received ready toggle: table={}, user={}, ready={}", tableId, userId, ready);
+    @MessageMapping("/table/teams/assign")
+    public void assignTeams(@Payload AssignTeamsRequestDTO request, Principal principal) {
+        requirePrincipal(principal);
+        tablePlayerService.assignTeams(request.tableId(), UUID.fromString(principal.getName()), request.teamAssignments());
+    }
 
-        try {
-            tablePlayerService.setPlayerReady(tableId, userId, ready);
-
-            List<String> readyPlayers = tablePlayerService.getReadyPlayers(tableId);
-
-            log.info("Player ready status updated: table={}, user={}, ready={}, totalReady={}",
-                    tableId, userId, ready, readyPlayers.size());
-
-        } catch (Exception e) {
-            log.error("Error updating ready status: table={}, user={}, error={}", tableId, userId, e.getMessage(), e);
-            sendErrorToUser(userId, "Failed to update ready status");
-        }
+    @MessageMapping("/table/match/start")
+    public void startMatch(@Payload StartMatchRequestDTO request, Principal principal) {
+        requirePrincipal(principal);
+        tablePlayerService.startMatch(request.tableId(), UUID.fromString(principal.getName()), request.teamAssignments());
     }
 
     @MessageMapping("/table/leave")
-    public void leaveTable(@Payload Map<String, String> payload, Principal principal) {
-        UUID userId = UUID.fromString(principal.getName());
-        UUID tableId = UUID.fromString(payload.get("tableId"));
-
-        log.info("Player leaving table: table={}, user={}", tableId, userId);
-
-        try {
-            tablePlayerService.cancelTable(tableId, userId);
-            log.info("Table cancelled: table={}, initiatedBy={}", tableId, userId);
-
-        } catch (Exception e) {
-            log.error("Error leaving table: table={}, userId={}, error={}", tableId, userId, e.getMessage(), e);
-            sendErrorToUser(userId, "Failed to leave table: " +  e.getMessage());
-        }
-
+    public void leaveTable(@Payload LeaveTableRequestDTO request, Principal principal) {
+        requirePrincipal(principal);
+        tablePlayerService.leaveTable(request.tableId(), UUID.fromString(principal.getName()));
     }
 
-    private void sendErrorToUser(UUID userId, String message) {
-        messagingTemplate.convertAndSendToUser(
-                userId.toString(),
-                "/queue/error",
-                Map.of("message", message)
-        );
+    private void requirePrincipal(Principal principal) {
+        if (principal == null || principal.getName() == null) {
+            throw new IllegalArgumentException("Authentication is required");
+        }
     }
 }

@@ -5,6 +5,7 @@ import com.rpo.mimico.dtos.MatchStateResponseDTO;
 import com.rpo.mimico.dtos.StartMatchRequestDTO;
 import com.rpo.mimico.services.MatchService;
 import com.rpo.mimico.services.ReconnectionService;
+import com.rpo.mimico.services.TablePlayerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -31,6 +32,7 @@ public class MatchController {
 
     private final MatchService matchService;
     private final ReconnectionService reconnectionService;
+    private final TablePlayerService tablePlayerService;
 
     @Operation(
             summary = "Get active match by table ID",
@@ -62,8 +64,18 @@ public class MatchController {
             }
     )
     @PostMapping("/start")
-    public ResponseEntity<MatchResponseDTO> startMatch(@Valid @RequestBody StartMatchRequestDTO request) {
-        MatchResponseDTO response = matchService.startMatch(request);
+    public ResponseEntity<MatchResponseDTO> startMatch(
+            java.security.Principal principal,
+            @Valid @RequestBody StartMatchRequestDTO request
+    ) {
+        if (principal == null || principal.getName() == null) {
+            throw new IllegalArgumentException("Authentication is required");
+        }
+        MatchResponseDTO response = tablePlayerService.startMatch(
+                request.tableId(),
+                UUID.fromString(principal.getName()),
+                request.teamAssignments()
+        );
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
