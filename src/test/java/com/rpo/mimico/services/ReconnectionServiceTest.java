@@ -78,7 +78,7 @@ public class ReconnectionServiceTest {
 
         table = new GameTableEntity();
         table.setId(UUID.randomUUID());
-        table.setStatus(GameTableEntity.TableStatus.IN_PROGRESS);
+        table.setStatus(GameTableEntity.TableStatus.TABLE_IN_MATCH);
 
         match = new MatchEntity();
         match.setId(matchId);
@@ -286,7 +286,6 @@ public class ReconnectionServiceTest {
         return List.of(mp1, mp2, mp3, mp4);
     }
 }
-
 
 
 

@@ -9,6 +9,7 @@ import java.util.UUID;
 public record MatchResponseDTO(
         UUID matchId,
         UUID tableId,
+        String status,
         Character startingTeam,
         UUID currentMimePlayerId,
         Integer teamAPosition,

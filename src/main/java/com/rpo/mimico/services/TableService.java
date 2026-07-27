@@ -30,7 +30,7 @@ public class TableService {
         GameTableEntity table = GameTableEntity.builder()
                 .name(request.name())
                 .host(host)
-                .status(GameTableEntity.TableStatus.WAITING)
+                .status(GameTableEntity.TableStatus.TABLE_WAITING)
                 .build();
 
         GameTableEntity savedTable = gameTableRepository.save(table);
@@ -40,25 +40,32 @@ public class TableService {
         tablePlayerService.initializeTableRedis(savedTable.getId(), hostUserId);
 
         return TableResponseDTO.builder()
-                .id(savedTable.getId())
+                .tableId(savedTable.getId())
                 .name(savedTable.getName())
-                .hostId(savedTable.getHost().getId())
+                .hostUserId(savedTable.getHost().getId())
                 .hostNickname(savedTable.getHost().getNickname())
                 .status(savedTable.getStatus().name())
+                .players(tablePlayerService.getTablePlayersWithDetails(savedTable.getId()))
+                .teamAssignments(tablePlayerService.getTeamAssignments(savedTable.getId()))
                 .createdAt(savedTable.getCreatedAt())
                 .build();
     }
 
-    public TableResponseDTO getTable(UUID tableId) {
+    public TableResponseDTO getTable(UUID tableId, UUID requesterUserId) {
         GameTableEntity table = gameTableRepository.findById(tableId)
                 .orElseThrow(() -> new IllegalArgumentException("Table not found"));
+        if (!tablePlayerService.isAcceptedPlayer(tableId, requesterUserId)) {
+            throw new IllegalArgumentException("User is not an accepted table player");
+        }
 
         return TableResponseDTO.builder()
-                .id(table.getId())
+                .tableId(table.getId())
                 .name(table.getName())
-                .hostId(table.getHost().getId())
+                .hostUserId(table.getHost().getId())
                 .hostNickname(table.getHost().getNickname())
                 .status(table.getStatus().name())
+                .players(tablePlayerService.getTablePlayersWithDetails(tableId))
+                .teamAssignments(tablePlayerService.getTeamAssignments(tableId))
                 .createdAt(table.getCreatedAt())
                 .build();
     }

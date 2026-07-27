@@ -33,7 +33,7 @@ public class GameTableEntity {
     private UserEntity host;
 
     @Enumerated(EnumType.STRING)
-    @Column(length = 20, nullable = false)
+    @Column(length = 32, nullable = false)
     private TableStatus status;
 
     @CreationTimestamp
@@ -45,9 +45,10 @@ public class GameTableEntity {
     private LocalDateTime updatedAt;
 
     public enum TableStatus {
-        WAITING,
-        IN_PROGRESS,
-        FINISHED,
-        CANCELLED
+        TABLE_WAITING,
+        TABLE_READY_TO_START,
+        TABLE_IN_MATCH,
+        TABLE_BETWEEN_MATCHES,
+        TABLE_CLOSED
     }
 }

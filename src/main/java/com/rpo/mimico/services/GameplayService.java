@@ -261,7 +261,7 @@ public class GameplayService {
         matchRepository.save(match);
 
         GameTableEntity table = match.getTable();
-        table.setStatus(GameTableEntity.TableStatus.FINISHED);
+        table.setStatus(GameTableEntity.TableStatus.TABLE_BETWEEN_MATCHES);
         gameTableRepository.save(table);
 
         log.info("Match finished: match={}, winner={}, teamAPos={}, teamBPos={}",

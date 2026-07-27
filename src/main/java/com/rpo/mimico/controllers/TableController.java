@@ -53,8 +53,11 @@ public class TableController {
             }
     )
     @GetMapping("/{tableId}")
-    public ResponseEntity<TableResponseDTO> getTable(@PathVariable UUID tableId) {
-        TableResponseDTO response = tableService.getTable(tableId);
+    public ResponseEntity<TableResponseDTO> getTable(
+            @AuthenticationPrincipal String userId,
+            @PathVariable UUID tableId
+    ) {
+        TableResponseDTO response = tableService.getTable(tableId, UUID.fromString(userId));
         return ResponseEntity.ok(response);
     }
 }
