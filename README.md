@@ -22,3 +22,5 @@ Current baseline notes:
 ## Slack + Cursor
 
 Test note from the Slack integration: this file was edited by a Cursor Cloud Agent to confirm the session can change `api-mimico`.
+
+Follow-up task from Slack: README updated, committed, and sent as a pull request to validate the Slack + Cursor flow end to end.
