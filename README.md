@@ -18,3 +18,7 @@ Current baseline notes:
 - The current remaining failures are classified as legacy/spec-alignment follow-ups, not baseline infrastructure blockers:
   - `ReconnectionServiceTest.handleDisconnect_pausesMatchAndStoresInRedis` expects `3600L`, while accepted V1 specs require a 60-second reconnection window and current implementation uses `90L`.
   - `ReconnectionServiceTest.forfeitMatch_setsWinnerAndFinishesMatch` uses an incomplete fixture where `match.table` is null.
+
+## Slack + Cursor
+
+Test note from the Slack integration: this file was edited by a Cursor Cloud Agent to confirm the session can change `api-mimico`.
