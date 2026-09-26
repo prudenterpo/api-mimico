@@ -1,6 +1,9 @@
 package com.rpo.mimico.services;
 
-import com.rpo.mimico.dtos.MatchEndedDTO;
+import com.rpo.mimico.domain.FinishReason;
+import com.rpo.mimico.domain.MatchStatus;
+import com.rpo.mimico.domain.PauseReason;
+import com.rpo.mimico.dtos.RealtimeEventEnvelopeDTO;
 import com.rpo.mimico.entities.GameTableEntity;
 import com.rpo.mimico.entities.MatchEntity;
 import com.rpo.mimico.entities.MatchPlayerEntity;
@@ -16,7 +19,10 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,6 +52,8 @@ public class ReconnectionService {
     private final GameTableRepository gameTableRepository;
     private final StringRedisTemplate redisTemplate;
     private final SimpMessagingTemplate messagingTemplate;
+    private final TimerService timerService;
+    private final GameplayService gameplayService;
 
     @Transactional
     public void handleDisconnect(UUID userId) {
@@ -73,7 +81,20 @@ public class ReconnectionService {
             return;
         }
 
+        LocalDateTime now = GameClock.toLocalDateTime(timerService.now());
+        if (matchState.getRoundExpiresAt() != null) {
+            long seconds = Duration.between(now, matchState.getRoundExpiresAt()).getSeconds();
+            matchState.setRemainingRoundSecondsOnPause((int) Math.max(seconds, 0));
+        }
         matchState.setIsPaused(true);
+        matchState.setPausedAt(now);
+        matchState.setPauseReason(PauseReason.PLAYER_DISCONNECTED);
+        matchState.setDisconnectedUser(matchPlayer.getUser());
+        matchState.setReconnectDeadline(now.plusSeconds(RECONNECTION_TIMEOUT_SECONDS));
+        if (match.getMatchStatus() == MatchStatus.MATCH_ACTIVE) {
+            match.setMatchStatus(MatchStatus.MATCH_PAUSED);
+            matchRepository.save(match);
+        }
         matchStateRepository.save(matchState);
 
         String reconnectionKey = buildReconnectionKey(matchId, userId);
@@ -112,7 +133,30 @@ public class ReconnectionService {
         MatchStateEntity matchState = matchStateRepository.findByMatchId(matchId)
                 .orElseThrow(() -> new IllegalStateException("Match state not found: " + matchId));
 
+        Integer remaining = matchState.getRemainingRoundSecondsOnPause();
         matchState.setIsPaused(false);
+        matchState.setPausedAt(null);
+        matchState.setPauseReason(null);
+        matchState.setDisconnectedUser(null);
+        matchState.setReconnectDeadline(null);
+        matchState.setRemainingRoundSecondsOnPause(null);
+        if (matchState.getMatch().getMatchStatus() == MatchStatus.MATCH_PAUSED) {
+            matchState.getMatch().setMatchStatus(MatchStatus.MATCH_ACTIVE);
+            matchRepository.save(matchState.getMatch());
+        }
+        if (remaining != null) {
+            LocalDateTime resumedAt = GameClock.toLocalDateTime(timerService.now());
+            if (remaining <= 0) {
+                matchState.setRoundExpiresAt(resumedAt);
+                matchStateRepository.save(matchState);
+                redisTemplate.delete(reconnectionKey);
+                gameplayService.handleTimeout(matchId);
+                log.info("Match resumed with no remaining time: matchId={}, userId={}", matchId, userId);
+                broadcastMatchResumed(matchId, userId, matchPlayer.getUser().getNickname());
+                return;
+            }
+            matchState.setRoundExpiresAt(resumedAt.plusSeconds(remaining));
+        }
         matchStateRepository.save(matchState);
 
         redisTemplate.delete(reconnectionKey);
@@ -140,7 +184,9 @@ public class ReconnectionService {
         Character winnerTeam = disconnectedTeam == 'A' ? 'B' : 'A';
 
         match.setWinnerTeam(winnerTeam);
-        match.setFinishedAt(LocalDateTime.now());
+        match.setFinishReason(FinishReason.RECONNECTION_FORFEIT);
+        match.setMatchStatus(MatchStatus.MATCH_FINISHED);
+        match.setFinishedAt(GameClock.toLocalDateTime(timerService.now()));
         matchRepository.save(match);
 
         GameTableEntity table = match.getTable();
@@ -152,16 +198,14 @@ public class ReconnectionService {
         log.info("Match forfeited: matchId={}, disconnectedUser={}, winnerTeam={}",
                 matchId, disconnectedUserId, winnerTeam);
 
-        MatchEndedDTO matchEndedDTO = MatchEndedDTO.builder()
-                .matchId(match.getId())
-                .tableId(table.getId())
-                .winnerTeam(winnerTeam)
-                .reason("FORFEIT")
-                .build();
-
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("matchId", match.getId());
+        data.put("tableId", table.getId());
+        data.put("winnerTeam", winnerTeam.toString());
+        data.put("finishReason", FinishReason.RECONNECTION_FORFEIT.name());
         messagingTemplate.convertAndSend(
-                "/topic/table/" + table.getId() + "/match-ended",
-                Map.of("type", "MATCH_ENDED", "data", matchEndedDTO)
+                "/topic/table/" + table.getId() + "/closed",
+                new RealtimeEventEnvelopeDTO<>("MATCH_ENDED", data, OffsetDateTime.now())
         );
     }
 

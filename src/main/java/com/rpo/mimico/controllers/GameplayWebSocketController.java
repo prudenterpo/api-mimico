@@ -1,7 +1,5 @@
 package com.rpo.mimico.controllers;
 
-import com.rpo.mimico.dtos.DiceRollResponseDTO;
-import com.rpo.mimico.dtos.WordCardResponseDTO;
 import com.rpo.mimico.services.GameplayService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,41 +24,22 @@ public class GameplayWebSocketController {
     @MessageMapping("/match/{matchId}/dice/roll")
     public void rollDice(@DestinationVariable UUID matchId, Principal principal) {
         try {
-            DiceRollResponseDTO result = gameplayService.rollDice(matchId);
-
-            messagingTemplate.convertAndSend(
-                    "/topic/match/" + matchId + "/dice",
-                    Map.of(
-                            "type", "DICE_ROLLED",
-                            "data", result
-                    )
-            );
-
-            log.info("Dice rolled broadcasted: match={}, value={}", matchId, result.value());
+            gameplayService.rollDice(matchId, userId(principal));
+            log.info("Dice rolled: match={}", matchId);
         } catch (Exception e) {
             log.error("Error rolling dice: {}", e.getMessage());
-            sendErrorToUser(UUID.fromString(principal.getName()), e.getMessage());
+            sendErrorToUser(userId(principal), e.getMessage());
         }
     }
 
     @MessageMapping("/match/{matchId}/word/draw")
     public void drawWordCard(@DestinationVariable UUID matchId, Principal principal) {
         try {
-            WordCardResponseDTO wordCard = gameplayService.drawWordCard(matchId);
-
-            messagingTemplate.convertAndSendToUser(
-                    principal.getName(),
-                    "/queue/word-card",
-                    Map.of(
-                            "type", "WORD_CARD",
-                            "data", wordCard
-                    )
-            );
-
-            log.info("Word card sent to mime player: match={}", matchId);
+            gameplayService.drawWordCard(matchId, userId(principal));
+            log.info("Word card sent privately to mime player: match={}", matchId);
         } catch (Exception e) {
             log.error("Error drawing word card: {}", e.getMessage());
-            sendErrorToUser(UUID.fromString(principal.getName()), e.getMessage());
+            sendErrorToUser(userId(principal), e.getMessage());
         }
     }
 
@@ -73,22 +52,20 @@ public class GameplayWebSocketController {
         try {
             UUID wordId = UUID.fromString(payload.get("wordId"));
 
-            gameplayService.selectWord(matchId, wordId);
-
-            messagingTemplate.convertAndSend(
-                    "/topic/match/" + matchId + "/round",
-                    Map.of(
-                            "type", "ROUND_STARTED",
-                            "mimePlayerId", principal.getName(),
-                            "expiresIn", 60
-                    )
-            );
+            gameplayService.selectWord(matchId, wordId, userId(principal));
 
             log.info("Word selected and round started: match={}", matchId);
         } catch (Exception e) {
             log.error("Error selecting word: {}", e.getMessage());
             sendErrorToUser(UUID.fromString(principal.getName()), e.getMessage());
         }
+    }
+
+    private UUID userId(Principal principal) {
+        if (principal == null || principal.getName() == null) {
+            throw new IllegalArgumentException("Authentication is required");
+        }
+        return UUID.fromString(principal.getName());
     }
 
     private void sendErrorToUser(UUID userId, String message) {

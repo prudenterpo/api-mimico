@@ -3,6 +3,7 @@ package com.rpo.mimico.controllers;
 import com.rpo.mimico.dtos.ChatMessageDTO;
 import com.rpo.mimico.dtos.ChatValidationResultDTO;
 import com.rpo.mimico.dtos.ErrorResponseDTO;
+import com.rpo.mimico.dtos.RealtimeEventEnvelopeDTO;
 import com.rpo.mimico.services.ChatValidationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +13,7 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /*
@@ -45,11 +47,13 @@ public class ChatWebSocketController {
         try {
             ChatValidationResultDTO result = chatValidationService.processChatMessage(matchId, chatMessage);
 
-            messagingTemplate.convertAndSend("/topic/match/" + matchId + "/chat", result);
+            messagingTemplate.convertAndSend(
+                    "/topic/match/" + matchId + "/chat",
+                    new RealtimeEventEnvelopeDTO<>("GUESS_RECEIVED", result, OffsetDateTime.now())
+            );
 
             if (result.isCorrect()) {
                 log.info("Correct guess! match={}, player={}, team={}", matchId, result.playerId(), result.guesserTeam());
-                messagingTemplate.convertAndSend("/topic/match/" + matchId + "/correct-guess", result);
             }
 
         } catch (IllegalStateException | IllegalArgumentException e) {

@@ -1,5 +1,7 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.domain.FinishReason;
+import com.rpo.mimico.domain.MatchStatus;
 import com.rpo.mimico.dtos.MatchEndedDTO;
 import com.rpo.mimico.dtos.MatchResponseDTO;
 import com.rpo.mimico.dtos.MatchStateResponseDTO;
@@ -10,6 +12,7 @@ import com.rpo.mimico.entities.MatchEntity;
 import com.rpo.mimico.entities.MatchPlayerEntity;
 import com.rpo.mimico.entities.MatchStateEntity;
 import com.rpo.mimico.entities.UserEntity;
+import com.rpo.mimico.exceptions.MatchNotFoundException;
 import com.rpo.mimico.repositories.GameTableRepository;
 import com.rpo.mimico.repositories.MatchPlayerRepository;
 import com.rpo.mimico.repositories.MatchRepository;
@@ -32,13 +35,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MatchService {
 
-    private static final Set<Integer> SPECIAL_TILES = Set.of(5, 11, 17, 23, 29, 35, 40, 44, 48, 51);
-
     private final MatchRepository matchRepository;
     private final MatchPlayerRepository matchPlayerRepository;
     private final MatchStateRepository matchStateRepository;
     private final GameTableRepository gameTableRepository;
     private final UserRepository userRepository;
+    private final MatchStateMapper matchStateMapper = new MatchStateMapper();
 
     @Transactional
     public MatchResponseDTO startMatch(StartMatchRequestDTO request) {
@@ -54,6 +56,7 @@ public class MatchService {
 
         MatchEntity match = MatchEntity.builder()
                 .table(table)
+                .matchStatus(MatchStatus.MATCH_SETUP)
                 .startedAt(LocalDateTime.now())
                 .build();
         match = matchRepository.save(match);
@@ -73,6 +76,7 @@ public class MatchService {
             MatchPlayerEntity matchPlayer = MatchPlayerEntity.builder()
                     .match(match)
                     .user(user)
+                    .nickname(user.getNickname())
                     .team(playerTeam.team())
                     .playerOrder(i + 1)
                     .build();
@@ -96,7 +100,7 @@ public class MatchService {
         return MatchResponseDTO.builder()
                 .matchId(match.getId())
                 .tableId(table.getId())
-                .status("MATCH_SETUP")
+                .status(match.getMatchStatus().name())
                 .teamAPosition(0)
                 .teamBPosition(0)
                 .startedAt(match.getStartedAt())
@@ -111,69 +115,14 @@ public class MatchService {
     @Transactional
     public MatchStateResponseDTO getActiveMatchByTableId(UUID tableId) {
         MatchEntity match = matchRepository.findByTableIdAndFinishedAtIsNull(tableId)
-                .orElse(null);
-
-        if (match == null) {
-            return null;
-        }
+                .or(() -> matchRepository.findFirstByTable_IdOrderByStartedAtDesc(tableId))
+                .orElseThrow(() -> new MatchNotFoundException(tableId));
 
         MatchStateEntity state = matchStateRepository.findByMatchId(match.getId())
                 .orElseThrow(() -> new IllegalStateException("Match state not found for match: " + match.getId()));
 
         List<MatchPlayerEntity> matchPlayers = matchPlayerRepository.findByMatchIdOrderByPlayerOrder(match.getId());
-
-        List<MatchStateResponseDTO.PlayerDTO> players = matchPlayers.stream()
-                .map(mp -> MatchStateResponseDTO.PlayerDTO.builder()
-                        .userId(mp.getUser().getId())
-                        .nickname(mp.getUser().getNickname())
-                        .team(mp.getTeam())
-                        .playerOrder(mp.getPlayerOrder())
-                        .build())
-                .toList();
-
-        int currentPosition = state.getCurrentTeam() != null && state.getCurrentTeam() == 'A'
-                ? state.getTeamAPosition()
-                : state.getTeamBPosition();
-
-        String gamePhase = determineGamePhase(state);
-
-        return MatchStateResponseDTO.builder()
-                .matchId(match.getId())
-                .tableId(tableId)
-                .players(players)
-                .teamAPosition(state.getTeamAPosition())
-                .teamBPosition(state.getTeamBPosition())
-                .currentTurn(state.getCurrentTeam())
-                .currentMimePlayerId(state.getCurrentMimePlayer() != null ? state.getCurrentMimePlayer().getId() : null)
-                .gamePhase(gamePhase)
-                .timerEndsAt(state.getRoundExpiresAt())
-                .isSpecialTile(SPECIAL_TILES.contains(currentPosition))
-                .isPaused(state.getIsPaused())
-                .build();
-    }
-
-    /*
-     * Determines the current game phase based on match state.
-     * Phases: dice, word-selection, mime, finished
-     */
-    private String determineGamePhase(MatchStateEntity state) {
-        if (state.getCurrentTeam() == null) {
-            return "sorteio";
-        }
-
-        if (state.getIsPaused()) {
-            return "paused";
-        }
-
-        if (state.getRoundExpiresAt() != null && LocalDateTime.now().isBefore(state.getRoundExpiresAt())) {
-            return "mime";
-        }
-
-        if (state.getCurrentWord() != null && state.getRoundExpiresAt() == null) {
-            return "word-selection";
-        }
-
-        return "dice";
+        return matchStateMapper.toDto(match, state, matchPlayers);
     }
 
     @Transactional
@@ -188,6 +137,8 @@ public class MatchService {
         Character winnerTeam = abandonedTeam == 'A' ? 'B' : 'A';
 
         match.setWinnerTeam(winnerTeam);
+        match.setFinishReason(FinishReason.MANUAL_FORFEIT);
+        match.setMatchStatus(MatchStatus.MATCH_FINISHED);
         match.setFinishedAt(LocalDateTime.now());
         matchRepository.save(match);
 
@@ -202,7 +153,7 @@ public class MatchService {
                 .matchId(match.getId())
                 .tableId(tableId)
                 .winnerTeam(winnerTeam)
-                .reason("ABANDONED")
+                .reason(FinishReason.MANUAL_FORFEIT.name())
                 .abandonedByUserId(userId)
                 .abandonedByNickname(player.getUser().getNickname())
                 .build();

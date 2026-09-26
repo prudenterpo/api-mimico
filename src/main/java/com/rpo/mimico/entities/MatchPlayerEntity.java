@@ -26,9 +26,15 @@ public class MatchPlayerEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private UserEntity user;
 
+    @Column(length = 255)
+    private String nickname;
+
     @Column(nullable = false, length = 1)
     private Character team;
 
     @Column(name = "player_order", nullable = false)
     private Integer playerOrder;
+
+    @Column(name = "last_mime_round")
+    private Integer lastMimeRound;
 }

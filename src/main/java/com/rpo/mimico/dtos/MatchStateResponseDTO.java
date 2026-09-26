@@ -18,7 +18,16 @@ public record MatchStateResponseDTO(
         String gamePhase,
         LocalDateTime timerEndsAt,
         Boolean isSpecialTile,
-        Boolean isPaused
+        Boolean isPaused,
+        String matchStatus,
+        String roundState,
+        Character currentTeam,
+        LocalDateTime pausedAt,
+        String pauseReason,
+        UUID disconnectedUserId,
+        LocalDateTime reconnectDeadline,
+        Character winnerTeam,
+        String finishReason
 ) {
     @Builder
     public record PlayerDTO(

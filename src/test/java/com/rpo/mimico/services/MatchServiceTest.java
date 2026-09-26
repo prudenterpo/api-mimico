@@ -1,5 +1,6 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.exceptions.MatchNotFoundException;
 import com.rpo.mimico.dtos.MatchResponseDTO;
 import com.rpo.mimico.dtos.StartMatchRequestDTO;
 import com.rpo.mimico.dtos.TeamAssignmentDTO;
@@ -114,6 +115,14 @@ class MatchServiceTest {
         verify(matchStateRepository).save(stateCaptor.capture());
         assertEquals(0, stateCaptor.getValue().getTeamAPosition());
         assertEquals(0, stateCaptor.getValue().getTeamBPosition());
+    }
+
+    @Test
+    void getActiveMatchByTableIdThrowsWhenMatchDoesNotExist() {
+        when(matchRepository.findByTableIdAndFinishedAtIsNull(tableId)).thenReturn(Optional.empty());
+        when(matchRepository.findFirstByTable_IdOrderByStartedAtDesc(tableId)).thenReturn(Optional.empty());
+
+        assertThrows(MatchNotFoundException.class, () -> service.getActiveMatchByTableId(tableId));
     }
 
     @Test

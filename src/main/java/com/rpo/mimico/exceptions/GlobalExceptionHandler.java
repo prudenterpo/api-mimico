@@ -109,6 +109,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponseDTO);
     }
 
+    @ExceptionHandler(MatchNotFoundException.class)
+    public ResponseEntity<ErrorResponseDTO> handleMatchNotFound(MatchNotFoundException ex, WebRequest request) {
+        log.warn("Match not found: {}", ex.getMessage());
+
+        ErrorResponseDTO errorResponseDTO = ErrorResponseDTO.builder()
+                .code("MATCH_NOT_FOUND")
+                .message(ex.getMessage())
+                .details(pathDetails(request))
+                .build();
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponseDTO);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponseDTO> handleIllegalArgument(IllegalArgumentException ex, WebRequest request) {
         log.warn("Invalid argument: {}", ex.getMessage());
