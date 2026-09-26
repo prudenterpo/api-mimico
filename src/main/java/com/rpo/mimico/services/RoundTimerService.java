@@ -1,18 +1,17 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.domain.MatchStatus;
+import com.rpo.mimico.domain.RoundState;
 import com.rpo.mimico.entities.MatchStateEntity;
 import com.rpo.mimico.repositories.MatchStateRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.UUID;
 
 @Slf4j
 @Service
@@ -21,22 +20,30 @@ public class RoundTimerService {
 
     private final MatchStateRepository matchStateRepository;
     private final GameplayService gameplayService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final TimerService timerService;
 
     @Scheduled(fixedRate = 1000)
     @Transactional
     public void checkExpiredRounds() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = GameClock.toLocalDateTime(timerService.now());
+        List<MatchStateEntity> expiredRounds = matchStateRepository.findExpiredRounds(
+                now,
+                RoundState.ROUND_GUESSING,
+                MatchStatus.MATCH_ACTIVE
+        );
 
-        List<MatchStateEntity> expiredRounds = matchStateRepository.findExpiredRounds(now);
-
-        if (expiredRounds.isEmpty()) return;
+        if (expiredRounds.isEmpty()) {
+            return;
+        }
 
         log.info("Found {} expired rounds to process", expiredRounds.size());
 
         for (MatchStateEntity matchState : expiredRounds) {
+            if (shouldIgnore(matchState)) {
+                continue;
+            }
             try {
-                processExpiredRound(matchState);
+                gameplayService.handleTimeout(matchState.getMatch().getId());
             } catch (Exception e) {
                 log.error("Failed to process expired round: matchId={}, error={}",
                         matchState.getMatch().getId(), e.getMessage(), e);
@@ -44,30 +51,14 @@ public class RoundTimerService {
         }
     }
 
-    private void processExpiredRound(MatchStateEntity matchState) {
-        UUID matchId = matchState.getMatch().getId();
-        Character teamThatTimeOut = matchState.getCurrentTeam();
-
-        log.info("Processing round timeout: matchId={}, team={}, expiredAt={}",
-                matchId, teamThatTimeOut, matchState.getRoundExpiresAt());
-
-        gameplayService.handleTimeout(matchId);
-
-        broadcastTimeoutEvent(matchId, teamThatTimeOut);
-
-        log.info("Round timeout processed successfully: matchId={}", matchId);
-    }
-
-    private void broadcastTimeoutEvent(UUID matchId, Character teamThatTimeOut) {
-        Map<String, Object> payload = Map.of(
-                "type", "ROUND_TIMEOUT",
-                "teamThatTimeOut", teamThatTimeOut,
-                "timestamp", LocalDateTime.now().toString()
-        );
-
-        String destination = "/topic/match/" + matchId + "/timeout";
-        messagingTemplate.convertAndSend(destination, payload);
-
-        log.debug("Timeout event broadcasted: matchId={}, team={}", matchId, teamThatTimeOut);
+    private boolean shouldIgnore(MatchStateEntity matchState) {
+        if (Boolean.TRUE.equals(matchState.getIsPaused())) {
+            return true;
+        }
+        if (matchState.getMatch().getMatchStatus() == MatchStatus.MATCH_PAUSED
+                || matchState.getMatch().getMatchStatus() == MatchStatus.MATCH_FINISHED) {
+            return true;
+        }
+        return matchState.getRoundState() != RoundState.ROUND_GUESSING;
     }
 }

@@ -1,186 +1,183 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.domain.MatchStatus;
+import com.rpo.mimico.domain.RoundState;
+import com.rpo.mimico.entities.MatchEntity;
 import com.rpo.mimico.entities.MatchPlayerEntity;
 import com.rpo.mimico.entities.MatchStateEntity;
 import com.rpo.mimico.repositories.MatchPlayerRepository;
+import com.rpo.mimico.repositories.MatchRepository;
 import com.rpo.mimico.repositories.MatchStateRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Random;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class InitialDiceService {
 
-    private static final String KEY_PLAYER_A = "match:%s:sorteio:playerA";
-    private static final String KEY_PLAYER_B = "match:%s:sorteio:playerB";
-    private static final String KEY_ROLL_A   = "match:%s:sorteio:rollA";
-    private static final String KEY_ROLL_B   = "match:%s:sorteio:rollB";
-    private static final long TTL_SECONDS = 600;
-
     private final MatchStateRepository matchStateRepository;
+    private final MatchRepository matchRepository;
     private final MatchPlayerRepository matchPlayerRepository;
-    private final StringRedisTemplate redisTemplate;
+    private final DiceService diceService;
+    private final MatchCommandLock matchCommandLock;
+    private final MatchEventPublisher matchEventPublisher;
     private final SimpMessagingTemplate messagingTemplate;
 
-    private final Random random = new Random();
-
-    /*
-     * Host selects one player from each team to roll the dice.
-     * UC08: host escolhe 1 jogador de cada equipe.
-     */
-    @Transactional
     public void selectPlayers(UUID matchId, UUID hostId, UUID playerAId, UUID playerBId) {
-        MatchStateEntity matchState = getMatchState(matchId);
-
-        if (matchState.getCurrentTeam() != null) {
-            throw new IllegalStateException("Sorteio already completed for this match");
-        }
-
-        UUID tableHostId = matchState.getMatch().getTable().getHost().getId();
-        if (!tableHostId.equals(hostId)) {
-            throw new IllegalArgumentException("Only the table host can select sorteio players");
-        }
-
-        MatchPlayerEntity mpA = matchPlayerRepository.findByMatchIdAndUserId(matchId, playerAId)
-                .orElseThrow(() -> new IllegalArgumentException("Player A not found in match: " + playerAId));
-        if (mpA.getTeam() != 'A') {
-            throw new IllegalArgumentException("Player A must be from team A");
-        }
-
-        MatchPlayerEntity mpB = matchPlayerRepository.findByMatchIdAndUserId(matchId, playerBId)
-                .orElseThrow(() -> new IllegalArgumentException("Player B not found in match: " + playerBId));
-        if (mpB.getTeam() != 'B') {
-            throw new IllegalArgumentException("Player B must be from team B");
-        }
-
-        redisTemplate.opsForValue().set(key(KEY_PLAYER_A, matchId), playerAId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.opsForValue().set(key(KEY_PLAYER_B, matchId), playerBId.toString(), TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.delete(key(KEY_ROLL_A, matchId));
-        redisTemplate.delete(key(KEY_ROLL_B, matchId));
-
-        log.info("Sorteio players selected: match={}, playerA={}, playerB={}", matchId, playerAId, playerBId);
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("type", "SORTEIO_PLAYERS_SELECTED");
-        payload.put("playerAId", playerAId.toString());
-        payload.put("playerANickname", mpA.getUser().getNickname());
-        payload.put("playerBId", playerBId.toString());
-        payload.put("playerBNickname", mpB.getUser().getNickname());
-        messagingTemplate.convertAndSend("/topic/match/" + matchId + "/sorteio", payload);
+        matchCommandLock.execute(matchId, () -> {
+            doSelectPlayers(matchId, hostId, playerAId, playerBId);
+            return null;
+        });
     }
 
-    /*
-     * A selected player rolls the dice for the sorteio.
-     * After both have rolled, result is resolved automatically.
-     * Ties reset rolls so both players must roll again.
-     */
-    @Transactional
     public void roll(UUID matchId, UUID playerId) {
-        MatchStateEntity matchState = getMatchState(matchId);
+        matchCommandLock.execute(matchId, () -> {
+            doRoll(matchId, playerId);
+            return null;
+        });
+    }
 
-        if (matchState.getCurrentTeam() != null) {
-            throw new IllegalStateException("Sorteio already completed");
+    private void doSelectPlayers(UUID matchId, UUID hostId, UUID playerAId, UUID playerBId) {
+        MatchStateEntity matchState = getMatchState(matchId);
+        MatchEntity match = matchState.getMatch();
+        assertSetup(match, matchState);
+
+        UUID tableHostId = match.getTable().getHost().getId();
+        if (!tableHostId.equals(hostId)) {
+            throw new IllegalArgumentException("actor is not host");
         }
 
-        String storedA = redisTemplate.opsForValue().get(key(KEY_PLAYER_A, matchId));
-        String storedB = redisTemplate.opsForValue().get(key(KEY_PLAYER_B, matchId));
+        MatchPlayerEntity playerA = requireTeamPlayer(matchId, playerAId, 'A');
+        MatchPlayerEntity playerB = requireTeamPlayer(matchId, playerBId, 'B');
 
-        if (storedA == null || storedB == null) {
+        matchState.setSorteioPlayerA(playerA.getUser());
+        matchState.setSorteioPlayerB(playerB.getUser());
+        matchState.setSorteioRollA(null);
+        matchState.setSorteioRollB(null);
+        matchStateRepository.save(matchState);
+
+        log.info("Sorteio players selected: match={}, playerA={}, playerB={}", matchId, playerAId, playerBId);
+        broadcast(matchId, payload(
+                "SORTEIO_PLAYERS_SELECTED",
+                "playerAId", playerAId.toString(),
+                "playerANickname", playerA.getUser().getNickname(),
+                "playerBId", playerBId.toString(),
+                "playerBNickname", playerB.getUser().getNickname()
+        ));
+    }
+
+    private void doRoll(UUID matchId, UUID playerId) {
+        MatchStateEntity matchState = getMatchState(matchId);
+        assertSetup(matchState.getMatch(), matchState);
+
+        if (matchState.getSorteioPlayerA() == null || matchState.getSorteioPlayerB() == null) {
             throw new IllegalStateException("Host must select players before rolling");
         }
 
-        UUID playerAId = UUID.fromString(storedA);
-        UUID playerBId = UUID.fromString(storedB);
-
-        boolean isPlayerA = playerId.equals(playerAId);
-        boolean isPlayerB = playerId.equals(playerBId);
-
+        boolean isPlayerA = playerId.equals(matchState.getSorteioPlayerA().getId());
+        boolean isPlayerB = playerId.equals(matchState.getSorteioPlayerB().getId());
         if (!isPlayerA && !isPlayerB) {
             throw new IllegalArgumentException("Player is not selected for sorteio: " + playerId);
         }
-
-        String rollKey = isPlayerA ? key(KEY_ROLL_A, matchId) : key(KEY_ROLL_B, matchId);
-
-        if (redisTemplate.opsForValue().get(rollKey) != null) {
+        if (isPlayerA && matchState.getSorteioRollA() != null || isPlayerB && matchState.getSorteioRollB() != null) {
             throw new IllegalStateException("Player already rolled for sorteio");
         }
 
-        int rollValue = random.nextInt(6) + 1;
-        redisTemplate.opsForValue().set(rollKey, String.valueOf(rollValue), TTL_SECONDS, TimeUnit.SECONDS);
+        int rollValue = diceService.roll();
+        if (isPlayerA) {
+            matchState.setSorteioRollA(rollValue);
+        } else {
+            matchState.setSorteioRollB(rollValue);
+        }
+        matchStateRepository.save(matchState);
 
         Character team = isPlayerA ? 'A' : 'B';
         log.info("Sorteio roll: match={}, player={}, team={}, value={}", matchId, playerId, team, rollValue);
+        broadcast(matchId, payload(
+                "SORTEIO_ROLL",
+                "playerId", playerId.toString(),
+                "team", team.toString(),
+                "value", rollValue
+        ));
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("type", "SORTEIO_ROLL");
-        payload.put("playerId", playerId.toString());
-        payload.put("team", team.toString());
-        payload.put("value", rollValue);
-        messagingTemplate.convertAndSend("/topic/match/" + matchId + "/sorteio", payload);
-
-        String rollAStr = redisTemplate.opsForValue().get(key(KEY_ROLL_A, matchId));
-        String rollBStr = redisTemplate.opsForValue().get(key(KEY_ROLL_B, matchId));
-
-        if (rollAStr != null && rollBStr != null) {
-            resolveSorteio(matchId, matchState, playerAId, playerBId,
-                    Integer.parseInt(rollAStr), Integer.parseInt(rollBStr));
+        if (matchState.getSorteioRollA() != null && matchState.getSorteioRollB() != null) {
+            resolve(matchId, matchState);
         }
     }
 
-    private void resolveSorteio(UUID matchId, MatchStateEntity matchState,
-                                UUID playerAId, UUID playerBId, int rollA, int rollB) {
+    private void resolve(UUID matchId, MatchStateEntity matchState) {
+        int rollA = matchState.getSorteioRollA();
+        int rollB = matchState.getSorteioRollB();
+        UUID playerAId = matchState.getSorteioPlayerA().getId();
+        UUID playerBId = matchState.getSorteioPlayerB().getId();
+
         if (rollA == rollB) {
-            redisTemplate.delete(key(KEY_ROLL_A, matchId));
-            redisTemplate.delete(key(KEY_ROLL_B, matchId));
-
-            log.info("Sorteio tie: match={}, rollA={}, rollB={} — re-roll required", matchId, rollA, rollB);
-
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("type", "SORTEIO_TIE");
-            payload.put("playerAId", playerAId.toString());
-            payload.put("playerBId", playerBId.toString());
-            payload.put("rollA", rollA);
-            payload.put("rollB", rollB);
-            messagingTemplate.convertAndSend("/topic/match/" + matchId + "/sorteio", payload);
+            matchState.setSorteioRollA(null);
+            matchState.setSorteioRollB(null);
+            matchStateRepository.save(matchState);
+            log.info("Sorteio tie: match={}, rollA={}, rollB={}", matchId, rollA, rollB);
+            broadcast(matchId, payload(
+                    "SORTEIO_TIE",
+                    "playerAId", playerAId.toString(),
+                    "playerBId", playerBId.toString(),
+                    "rollA", rollA,
+                    "rollB", rollB
+            ));
             return;
         }
 
         Character winnerTeam = rollA > rollB ? 'A' : 'B';
         UUID winnerPlayerId = rollA > rollB ? playerAId : playerBId;
-
-        MatchPlayerEntity winnerPlayer = matchPlayerRepository.findByMatchIdAndUserId(matchId, winnerPlayerId)
+        MatchPlayerEntity winner = matchPlayerRepository.findByMatchIdAndUserId(matchId, winnerPlayerId)
                 .orElseThrow(() -> new IllegalStateException("Winner player not found in match"));
 
         matchState.setCurrentTeam(winnerTeam);
-        matchState.setCurrentMimePlayer(winnerPlayer.getUser());
+        matchState.setCurrentMimePlayer(winner.getUser());
+        matchState.setRoundState(RoundState.ROUND_WAITING_FOR_DICE);
         matchStateRepository.save(matchState);
 
-        redisTemplate.delete(key(KEY_PLAYER_A, matchId));
-        redisTemplate.delete(key(KEY_PLAYER_B, matchId));
-        redisTemplate.delete(key(KEY_ROLL_A, matchId));
-        redisTemplate.delete(key(KEY_ROLL_B, matchId));
+        MatchEntity match = matchState.getMatch();
+        match.setMatchStatus(MatchStatus.MATCH_ACTIVE);
+        matchRepository.save(match);
 
         log.info("Sorteio complete: match={}, winnerTeam={}, winnerPlayer={}, rollA={}, rollB={}",
                 matchId, winnerTeam, winnerPlayerId, rollA, rollB);
+        broadcast(matchId, payload(
+                "SORTEIO_COMPLETE",
+                "winnerTeam", winnerTeam.toString(),
+                "winnerPlayerId", winnerPlayerId.toString(),
+                "rollA", rollA,
+                "rollB", rollB
+        ));
+        matchEventPublisher.publishState(matchId);
+    }
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("type", "SORTEIO_COMPLETE");
-        payload.put("winnerTeam", winnerTeam.toString());
-        payload.put("winnerPlayerId", winnerPlayerId.toString());
-        payload.put("rollA", rollA);
-        payload.put("rollB", rollB);
-        messagingTemplate.convertAndSend("/topic/match/" + matchId + "/sorteio", payload);
+    private void assertSetup(MatchEntity match, MatchStateEntity state) {
+        if (match.getMatchStatus() == MatchStatus.MATCH_FINISHED || match.getFinishedAt() != null) {
+            throw new IllegalStateException("match already finished");
+        }
+        if (state.getCurrentTeam() != null || match.getMatchStatus() == MatchStatus.MATCH_ACTIVE) {
+            throw new IllegalStateException("Sorteio already completed for this match");
+        }
+        if (match.getMatchStatus() != null && match.getMatchStatus() != MatchStatus.MATCH_SETUP) {
+            throw new IllegalStateException("match not active");
+        }
+    }
+
+    private MatchPlayerEntity requireTeamPlayer(UUID matchId, UUID playerId, char team) {
+        MatchPlayerEntity player = matchPlayerRepository.findByMatchIdAndUserId(matchId, playerId)
+                .orElseThrow(() -> new IllegalArgumentException("Player " + team + " not found in match: " + playerId));
+        if (player.getTeam() == null || player.getTeam() != team) {
+            throw new IllegalArgumentException("Player " + team + " must be from team " + team);
+        }
+        return player;
     }
 
     private MatchStateEntity getMatchState(UUID matchId) {
@@ -188,7 +185,16 @@ public class InitialDiceService {
                 .orElseThrow(() -> new IllegalArgumentException("Match state not found: " + matchId));
     }
 
-    private String key(String template, UUID matchId) {
-        return String.format(template, matchId);
+    private void broadcast(UUID matchId, Map<String, Object> payload) {
+        messagingTemplate.convertAndSend("/topic/match/" + matchId + "/sorteio", payload);
+    }
+
+    private Map<String, Object> payload(String type, Object... pairs) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("type", type);
+        for (int i = 0; i < pairs.length; i += 2) {
+            payload.put((String) pairs[i], pairs[i + 1]);
+        }
+        return payload;
     }
 }

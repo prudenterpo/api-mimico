@@ -16,4 +16,7 @@ public interface WordRepository extends JpaRepository<WordEntity, UUID> {
     WordEntity findRandomByCategoryId(@Param("categoryId") UUID categoryId);
 
     List<WordEntity> findByCategoryId(UUID categoryId);
+
+    @Query("SELECT w FROM WordEntity w WHERE w.category.name = :categoryName")
+    List<WordEntity> findByCategoryName(@Param("categoryName") String categoryName);
 }

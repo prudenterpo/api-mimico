@@ -1,5 +1,8 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.domain.MatchStatus;
+import com.rpo.mimico.domain.PauseReason;
+import com.rpo.mimico.domain.RoundState;
 import com.rpo.mimico.entities.GameTableEntity;
 import com.rpo.mimico.entities.MatchEntity;
 import com.rpo.mimico.entities.MatchPlayerEntity;
@@ -17,8 +20,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -34,11 +40,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 public class ReconnectionServiceTest {
 
     @Mock
@@ -55,6 +63,10 @@ public class ReconnectionServiceTest {
     private ValueOperations<String, String> valueOperations;
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+    @Mock
+    private TimerService timerService;
+    @Mock
+    private GameplayService gameplayService;
 
     @InjectMocks
     private ReconnectionService reconnectionService;
@@ -69,6 +81,7 @@ public class ReconnectionServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(timerService.now()).thenReturn(Instant.parse("2026-09-26T12:00:00Z"));
         matchId = UUID.randomUUID();
         userId = UUID.randomUUID();
 
@@ -212,9 +225,10 @@ public class ReconnectionServiceTest {
         verify(gameTableRepository).save(table);
         verify(redisTemplate).delete("reconnection:" + matchId + ":" + userId);
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/table/" + table.getId() + "/match-ended"),
+                eq("/topic/table/" + table.getId() + "/closed"),
                 any(Object.class)
         );
+        assertEquals(com.rpo.mimico.domain.FinishReason.RECONNECTION_FORFEIT, match.getFinishReason());
     }
 
     @Test
@@ -260,6 +274,62 @@ public class ReconnectionServiceTest {
 
         assertNull(result);
     }
+    @Test
+    void handleDisconnect_freezesRemainingRoundSeconds() {
+        match.setMatchStatus(MatchStatus.MATCH_ACTIVE);
+        matchState.setRoundExpiresAt(GameClock.toLocalDateTime(Instant.parse("2026-09-26T12:00:00Z")).plusSeconds(40));
+        when(matchPlayerRepository.findActiveMatchesByUserId(userId)).thenReturn(List.of(matchPlayer));
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        reconnectionService.handleDisconnect(userId);
+
+        assertEquals(40, matchState.getRemainingRoundSecondsOnPause());
+        assertEquals(PauseReason.PLAYER_DISCONNECTED, matchState.getPauseReason());
+        assertNotNull(matchState.getPausedAt());
+        assertNotNull(matchState.getReconnectDeadline());
+        assertEquals(userId, matchState.getDisconnectedUser().getId());
+        assertEquals(MatchStatus.MATCH_PAUSED, match.getMatchStatus());
+    }
+
+    @Test
+    void handleReconnect_recalculatesExpiresAtFromFrozenSeconds() {
+        matchState.setIsPaused(true);
+        matchState.setRemainingRoundSecondsOnPause(25);
+        match.setMatchStatus(MatchStatus.MATCH_PAUSED);
+        when(timerService.now()).thenReturn(Instant.parse("2026-09-26T12:00:15Z"));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(matchPlayerRepository.findActiveMatchesByUserId(userId)).thenReturn(List.of(matchPlayer));
+        when(valueOperations.get("reconnection:" + matchId + ":" + userId)).thenReturn("paused");
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+
+        reconnectionService.handleReconnect(userId);
+
+        assertEquals(
+                GameClock.toLocalDateTime(Instant.parse("2026-09-26T12:00:15Z")).plusSeconds(25),
+                matchState.getRoundExpiresAt()
+        );
+        assertNull(matchState.getRemainingRoundSecondsOnPause());
+        assertFalse(matchState.getIsPaused());
+        assertEquals(MatchStatus.MATCH_ACTIVE, match.getMatchStatus());
+        verify(gameplayService, never()).handleTimeout(any());
+    }
+
+    @Test
+    void handleReconnect_timesOutWhenFrozenSecondsAreZero() {
+        matchState.setIsPaused(true);
+        matchState.setRemainingRoundSecondsOnPause(0);
+        matchState.setRoundState(RoundState.ROUND_GUESSING);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(matchPlayerRepository.findActiveMatchesByUserId(userId)).thenReturn(List.of(matchPlayer));
+        when(valueOperations.get("reconnection:" + matchId + ":" + userId)).thenReturn("paused");
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+
+        reconnectionService.handleReconnect(userId);
+
+        verify(gameplayService).handleTimeout(matchId);
+    }
+
     private List<MatchPlayerEntity> createFourPlayers() {
         MatchPlayerEntity mp1 = new MatchPlayerEntity();
         mp1.setUser(user);
