@@ -2,6 +2,7 @@ package com.rpo.mimico.services;
 
 import com.rpo.mimico.domain.FinishReason;
 import com.rpo.mimico.domain.MatchStatus;
+import com.rpo.mimico.domain.PauseReason;
 import com.rpo.mimico.domain.RoundResolution;
 import com.rpo.mimico.domain.RoundState;
 import com.rpo.mimico.dtos.WordCardResponseDTO;
@@ -170,6 +171,21 @@ class GameplayServiceTest {
         assertEquals(Boolean.FALSE, roundRef.get().getSpecialTile());
         verify(matchEventPublisher).publishState(matchId);
         verify(matchEventPublisher, never()).publishEnded(any());
+    }
+
+    @Test
+    void gameplayCommandsAreRejectedWhileMimeMediaFailed() {
+        state.setIsPaused(true);
+        state.setPauseReason(PauseReason.MIME_MEDIA_FAILED);
+        match.setMatchStatus(MatchStatus.MATCH_PAUSED);
+
+        IllegalStateException error = assertThrows(
+                IllegalStateException.class,
+                () -> service.rollDice(matchId, partner.getId())
+        );
+
+        assertEquals("match is paused", error.getMessage());
+        verify(matchRepository, never()).save(any());
     }
 
     @Test

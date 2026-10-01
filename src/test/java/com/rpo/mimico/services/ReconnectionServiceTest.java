@@ -67,6 +67,8 @@ public class ReconnectionServiceTest {
     private TimerService timerService;
     @Mock
     private GameplayService gameplayService;
+    @Mock
+    private MatchEventPublisher matchEventPublisher;
 
     @InjectMocks
     private ReconnectionService reconnectionService;
@@ -328,6 +330,58 @@ public class ReconnectionServiceTest {
         reconnectionService.handleReconnect(userId);
 
         verify(gameplayService).handleTimeout(matchId);
+    }
+
+    @Test
+    void handleDisconnect_upgradesMimeMediaFailureAndKeepsRemainingDuration() {
+        match.setMatchStatus(MatchStatus.MATCH_PAUSED);
+        matchState.setIsPaused(true);
+        matchState.setPauseReason(PauseReason.MIME_MEDIA_FAILED);
+        matchState.setRemainingRoundSecondsOnPause(40);
+        matchState.setRoundExpiresAt(GameClock.toLocalDateTime(Instant.parse("2026-09-26T12:00:00Z")).plusSeconds(5));
+        matchState.setDisconnectedUser(null);
+        matchState.setReconnectDeadline(null);
+        when(matchPlayerRepository.findActiveMatchesByUserId(userId)).thenReturn(List.of(matchPlayer));
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        reconnectionService.handleDisconnect(userId);
+
+        LocalDateTime now = GameClock.toLocalDateTime(Instant.parse("2026-09-26T12:00:00Z"));
+        assertEquals(PauseReason.PLAYER_DISCONNECTED, matchState.getPauseReason());
+        assertEquals(userId, matchState.getDisconnectedUser().getId());
+        assertEquals(now.plusSeconds(ReconnectionService.RECONNECTION_TIMEOUT_SECONDS), matchState.getReconnectDeadline());
+        assertEquals(40, matchState.getRemainingRoundSecondsOnPause());
+        assertTrue(matchState.getIsPaused());
+        verify(matchStateRepository).save(matchState);
+        verify(valueOperations).set(
+                eq("reconnection:" + matchId + ":" + userId),
+                anyString(),
+                eq(90L),
+                eq(TimeUnit.SECONDS)
+        );
+        verify(matchEventPublisher).publishState(matchId);
+    }
+
+    @Test
+    void handleDisconnect_doesNotStoreASecondPauseForTheSamePlayer() {
+        LocalDateTime deadline = GameClock.toLocalDateTime(Instant.parse("2026-09-26T12:00:00Z")).plusSeconds(60);
+        matchState.setIsPaused(true);
+        matchState.setPauseReason(PauseReason.PLAYER_DISCONNECTED);
+        matchState.setDisconnectedUser(user);
+        matchState.setReconnectDeadline(deadline);
+        matchState.setRemainingRoundSecondsOnPause(40);
+        when(matchPlayerRepository.findActiveMatchesByUserId(userId)).thenReturn(List.of(matchPlayer));
+        when(matchStateRepository.findByMatchId(matchId)).thenReturn(Optional.of(matchState));
+
+        reconnectionService.handleDisconnect(userId);
+
+        assertEquals(deadline, matchState.getReconnectDeadline());
+        assertEquals(40, matchState.getRemainingRoundSecondsOnPause());
+        assertEquals(PauseReason.PLAYER_DISCONNECTED, matchState.getPauseReason());
+        verify(matchStateRepository, never()).save(any());
+        verify(valueOperations, never()).set(anyString(), anyString(), anyLong(), any());
+        verify(matchEventPublisher, never()).publishState(any());
     }
 
     private List<MatchPlayerEntity> createFourPlayers() {

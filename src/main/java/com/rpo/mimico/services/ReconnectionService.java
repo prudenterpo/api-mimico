@@ -54,6 +54,7 @@ public class ReconnectionService {
     private final SimpMessagingTemplate messagingTemplate;
     private final TimerService timerService;
     private final GameplayService gameplayService;
+    private final MatchEventPublisher matchEventPublisher;
 
     @Transactional
     public void handleDisconnect(UUID userId) {
@@ -70,14 +71,22 @@ public class ReconnectionService {
         MatchStateEntity matchState = matchStateRepository.findByMatchId(matchId)
                 .orElseThrow(() -> new IllegalStateException("Match state not found: " + matchId));
 
-        if (Boolean.TRUE.equals(matchState.getIsPaused())) {
-            log.warn("Match {} is already paused, not pausing again for user {}", matchId, userId);
-            return;
-        }
-
         MatchEntity match = matchState.getMatch();
         if (match.getFinishedAt() != null) {
             log.debug("Match {} is already finished, ignoring disconnect for user {}", matchId, userId);
+            return;
+        }
+
+        if (Boolean.TRUE.equals(matchState.getIsPaused())) {
+            if (matchState.getPauseReason() == PauseReason.MIME_MEDIA_FAILED) {
+                upgradeMediaFailureToDisconnect(matchState, matchPlayer);
+                return;
+            }
+            if (isSameDisconnectedPlayer(matchState, userId)) {
+                log.info("Disconnect already stored for player: matchId={}, userId={}", matchId, userId);
+                return;
+            }
+            log.warn("Match {} is already paused, not pausing again for user {}", matchId, userId);
             return;
         }
 
@@ -108,6 +117,45 @@ public class ReconnectionService {
         log.info("Match paused due to disconnect: matchId={}, userId={}, gracePeriod={}s", matchId, userId, RECONNECTION_TIMEOUT_SECONDS);
 
         broadcastMatchPaused(matchId, userId, matchPlayer.getUser().getNickname());
+        matchEventPublisher.publishState(matchId);
+    }
+
+    private void upgradeMediaFailureToDisconnect(MatchStateEntity matchState, MatchPlayerEntity matchPlayer) {
+        UUID matchId = matchPlayer.getMatch().getId();
+        UUID userId = matchPlayer.getUser().getId();
+        LocalDateTime now = GameClock.toLocalDateTime(timerService.now());
+        Integer storedRemaining = matchState.getRemainingRoundSecondsOnPause();
+
+        matchState.setIsPaused(true);
+        matchState.setPauseReason(PauseReason.PLAYER_DISCONNECTED);
+        matchState.setDisconnectedUser(matchPlayer.getUser());
+        matchState.setReconnectDeadline(now.plusSeconds(RECONNECTION_TIMEOUT_SECONDS));
+        matchState.setRemainingRoundSecondsOnPause(storedRemaining);
+
+        MatchEntity match = matchState.getMatch();
+        if (match.getMatchStatus() == MatchStatus.MATCH_ACTIVE) {
+            match.setMatchStatus(MatchStatus.MATCH_PAUSED);
+            matchRepository.save(match);
+        }
+        matchStateRepository.save(matchState);
+
+        redisTemplate.opsForValue().set(
+                buildReconnectionKey(matchId, userId),
+                LocalDateTime.now().toString(),
+                RECONNECTION_KEY_TTL_SECONDS,
+                TimeUnit.SECONDS
+        );
+
+        log.info("Media pause upgraded to disconnect: matchId={}, userId={}, gracePeriod={}s",
+                matchId, userId, RECONNECTION_TIMEOUT_SECONDS);
+        broadcastMatchPaused(matchId, userId, matchPlayer.getUser().getNickname());
+        matchEventPublisher.publishState(matchId);
+    }
+
+    private boolean isSameDisconnectedPlayer(MatchStateEntity matchState, UUID userId) {
+        return matchState.getPauseReason() == PauseReason.PLAYER_DISCONNECTED
+                && matchState.getDisconnectedUser() != null
+                && matchState.getDisconnectedUser().getId().equals(userId);
     }
 
     @Transactional
