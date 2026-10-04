@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/tables")
+@RequestMapping("/api/tables")
 @RequiredArgsConstructor
 @Tag(name = "Tables", description = "Game table management")
 @SecurityRequirement(name = "bearer-jwt")

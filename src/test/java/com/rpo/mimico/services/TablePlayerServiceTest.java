@@ -1,5 +1,6 @@
 package com.rpo.mimico.services;
 
+import com.rpo.mimico.dtos.InviteResponseDTO;
 import com.rpo.mimico.dtos.MatchResponseDTO;
 import com.rpo.mimico.dtos.RealtimeEventEnvelopeDTO;
 import com.rpo.mimico.dtos.TeamAssignmentDTO;
@@ -160,6 +161,36 @@ class TablePlayerServiceTest {
                 messagingTemplate
         );
         service.initializeTableRedis(tableId, host.getId());
+    }
+
+    @Test
+    void sendInvitePublishesReceivedEnvelopeWithHostNicknameFromUserRepository() {
+        UserEntity tableHostProxy = user(host.getId(), "lazy_host_must_not_be_read");
+        table.setHost(tableHostProxy);
+        UUID inviteId = UUID.randomUUID();
+        when(inviteService.createInvite(tableId, player2.getId(), host.getId())).thenReturn(inviteId);
+        when(inviteService.inviteTimeoutSeconds()).thenReturn(90L);
+
+        service.sendInvite(tableId, host.getId(), player2.getId());
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSendToUser(
+                eq(player2.getId().toString()),
+                eq("/queue/invite"),
+                captor.capture()
+        );
+        RealtimeEventEnvelopeDTO<?> envelope = assertEnvelope(captor.getValue());
+        assertEquals("TABLE_INVITE_RECEIVED", envelope.type());
+        assertInstanceOf(InviteResponseDTO.class, envelope.data());
+        InviteResponseDTO invite = (InviteResponseDTO) envelope.data();
+        assertEquals(inviteId, invite.inviteId());
+        assertEquals(tableId, invite.tableId());
+        assertEquals("Mesa V1", invite.tableName());
+        assertEquals(host.getId(), invite.hostId());
+        assertEquals("host_1", invite.hostDisplayName());
+        assertEquals(player2.getId(), invite.invitedUserId());
+        assertEquals(90, invite.expiresIn());
+        assertTrue(sets.get(invitedKey()).contains(player2.getId().toString()));
     }
 
     @Test
