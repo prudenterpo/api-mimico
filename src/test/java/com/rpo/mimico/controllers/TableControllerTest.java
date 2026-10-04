@@ -15,15 +15,18 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.RequestMapping;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -58,36 +61,36 @@ class TableControllerTest {
     }
 
     @Test
+    void tableControllerIsMappedAtApiTables() {
+        RequestMapping mapping = TableController.class.getAnnotation(RequestMapping.class);
+        assertArrayEquals(new String[]{"/api/tables"}, mapping.value());
+    }
+
+    @Test
     void createTableIsMappedAtApiTables() throws Exception {
         UUID hostUserId = UUID.randomUUID();
         UUID tableId = UUID.randomUUID();
         when(tableService.createTable(eq(hostUserId), any(CreateTableRequestDTO.class)))
                 .thenReturn(tableResponse(tableId, hostUserId, "Mesa V1"));
 
-        mockMvc.perform(post("/api/tables")
-                        .principal(new UsernamePasswordAuthenticationToken(hostUserId.toString(), null))
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(Map.of("name", "Mesa V1"))))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.tableId").value(tableId.toString()))
-                .andExpect(jsonPath("$.name").value("Mesa V1"))
-                .andExpect(jsonPath("$.hostUserId").value(hostUserId.toString()))
-                .andExpect(jsonPath("$.status").value("TABLE_WAITING"));
+        authenticate(hostUserId);
+        try {
+            mockMvc.perform(post("/api/tables")
+                            .principal(authentication(hostUserId))
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(Map.of("name", "Mesa V1"))))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.tableId").value(tableId.toString()))
+                    .andExpect(jsonPath("$.name").value("Mesa V1"))
+                    .andExpect(jsonPath("$.hostUserId").value(hostUserId.toString()))
+                    .andExpect(jsonPath("$.status").value("TABLE_WAITING"));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
 
         ArgumentCaptor<CreateTableRequestDTO> requestCaptor = ArgumentCaptor.forClass(CreateTableRequestDTO.class);
         verify(tableService).createTable(eq(hostUserId), requestCaptor.capture());
         assertEquals("Mesa V1", requestCaptor.getValue().name());
-    }
-
-    @Test
-    void createTableOnLegacyTablesPathIsNotMapped() throws Exception {
-        mockMvc.perform(post("/tables")
-                        .principal(new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(), null))
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(Map.of("name", "Mesa V1"))))
-                .andExpect(status().isNotFound());
-
-        verifyNoInteractions(tableService);
     }
 
     @Test
@@ -96,23 +99,40 @@ class TableControllerTest {
         UUID tableId = UUID.randomUUID();
         when(tableService.getTable(tableId, hostUserId)).thenReturn(tableResponse(tableId, hostUserId, "Mesa V1"));
 
-        mockMvc.perform(get("/api/tables/{tableId}", tableId)
-                        .principal(new UsernamePasswordAuthenticationToken(hostUserId.toString(), null)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tableId").value(tableId.toString()))
-                .andExpect(jsonPath("$.status").value("TABLE_WAITING"));
+        authenticate(hostUserId);
+        try {
+            mockMvc.perform(get("/api/tables/{tableId}", tableId)
+                            .principal(authentication(hostUserId)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.tableId").value(tableId.toString()))
+                    .andExpect(jsonPath("$.status").value("TABLE_WAITING"));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test
     void createTableRejectsBlankName() throws Exception {
-        mockMvc.perform(post("/api/tables")
-                        .principal(new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(), null))
-                        .contentType("application/json")
-                        .content(objectMapper.writeValueAsString(Map.of("name", " "))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        authenticate(UUID.randomUUID());
+        try {
+            mockMvc.perform(post("/api/tables")
+                            .contentType("application/json")
+                            .content(objectMapper.writeValueAsString(Map.of("name", " "))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
 
         verifyNoInteractions(tableService);
+    }
+
+    private void authenticate(UUID userId) {
+        SecurityContextHolder.getContext().setAuthentication(authentication(userId));
+    }
+
+    private UsernamePasswordAuthenticationToken authentication(UUID userId) {
+        return new UsernamePasswordAuthenticationToken(userId.toString(), null, List.of());
     }
 
     private TableResponseDTO tableResponse(UUID tableId, UUID hostUserId, String name) {
