@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class TablePlayerService {
 
     private static final String TABLE_ACCEPTED_KEY_TEMPLATE = "table:%s:accepted";
@@ -77,6 +79,8 @@ public class TablePlayerService {
 
         UserEntity invitedUser = userRepository.findById(invitedUserId)
                 .orElseThrow(() -> new IllegalArgumentException("Invited user not found"));
+        UserEntity host = userRepository.findById(hostUserId)
+                .orElseThrow(() -> new IllegalArgumentException("Host user not found"));
         UUID inviteId = inviteService.createInvite(tableId, invitedUserId, hostUserId);
         redisTemplate.opsForSet().add(invitedKey(tableId), invitedUserId.toString());
         redisTemplate.expire(invitedKey(tableId), Duration.ofHours(TABLE_TTL_HOURS));
@@ -86,7 +90,7 @@ public class TablePlayerService {
                 .tableId(tableId)
                 .tableName(table.getName())
                 .hostId(hostUserId)
-                .hostDisplayName(table.getHost().getNickname())
+                .hostDisplayName(host.getNickname())
                 .invitedUserId(invitedUser.getId())
                 .expiresIn((int) inviteService.inviteTimeoutSeconds())
                 .build();
